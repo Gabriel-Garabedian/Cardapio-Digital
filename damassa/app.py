@@ -4,8 +4,12 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import sqlite3, os, functools, uuid, urllib.parse, unicodedata, re
 
+# ─────────────────────────────────────────
+#  CONFIGURAÇÕES SEGURAS
+#  O secret key pode ser sobrescrito pela variável de ambiente SECRET_KEY
+# ─────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = "damassa_secret_2025_XkJ9"
+app.secret_key = os.environ.get("SECRET_KEY", "damassa_secret_2025_XkJ9")
 
 DB_PATH       = os.path.join(os.path.dirname(__file__), "damassa.db")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "static", "uploads")

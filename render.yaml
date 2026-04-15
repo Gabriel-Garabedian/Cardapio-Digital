@@ -8,14 +8,13 @@ services:
     name: damassa
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt
     startCommand: waitress-serve --port=$PORT wsgi:app
     healthCheckPath: /api/menu
     envVars:
       - key: SECRET_KEY
         generateValue: true
       - key: CHEF_WHATSAPP
-        value: "5581984552954"
+        value: "5581989073030"
       - key: PROD
         value: "1"
       - key: DATABASE_URL

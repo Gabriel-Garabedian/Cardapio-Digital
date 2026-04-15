@@ -13,7 +13,13 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 USE_PG = bool(os.environ.get("DATABASE_URL"))
 
 if USE_PG:
-    import psycopg2
+    # Instala o driver em runtime se não estiver disponível
+    import subprocess, sys
+    try:
+        import psycopg2
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg2-binary"])
+        import psycopg2
     from psycopg2.extras import RealDictCursor
     import psycopg2.extras
 
@@ -45,7 +51,7 @@ UPLOAD_FOLDER = _get_upload_folder()
 ALLOWED_EXT   = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 # ─── WhatsApp do chef ───
-CHEF_WHATSAPP_DEFAULT = os.environ.get("CHEF_WHATSAPP", "5581984552954")
+CHEF_WHATSAPP_DEFAULT = os.environ.get("CHEF_WHATSAPP", "5581989073030")
 _chef_whatsapp = CHEF_WHATSAPP_DEFAULT
 
 def get_chef_whatsapp():

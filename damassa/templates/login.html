@@ -15,10 +15,10 @@
     <!-- Tabs -->
     <div class="auth-tabs">
       <button class="auth-tab active" data-tab="login" onclick="switchTab('login',this)">
-        🍽️ Entrar
+        Entrar
       </button>
       <button class="auth-tab" data-tab="register" onclick="window.location='{{ url_for('register') }}'">
-        ✨ Cadastrar
+        Cadastrar
       </button>
     </div>
 
@@ -49,20 +49,6 @@
     <p class="auth-footer">
       Não tem conta? <a href="{{ url_for('register') }}">Cadastre-se grátis</a>
     </p>
-    <div class="auth-demo">
-      <p>Demo rápido:</p>
-      <button class="demo-btn" onclick="fillDemo('cliente@damassa.com','123456')">👤 Cliente</button>
-      <button class="demo-btn" onclick="fillDemo('chef@damassa.com','admin123')">👨‍🍳 Chef</button>
-    </div>
   </div>
 </div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function fillDemo(email, pass) {
-  document.querySelector('input[name=email]').value = email;
-  document.querySelector('input[name=password]').value = pass;
-}
-</script>
 {% endblock %}

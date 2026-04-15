@@ -242,7 +242,7 @@ def init_db():
         # Seed chef (locked)
         if not db.execute("SELECT id FROM users WHERE email='chef@damassa.com'").fetchone():
             db.execute("INSERT INTO users (username,email,password,role,full_name) VALUES (?,?,?,'chef','Josue Matheus')",
-                       ('chef_josue','chef@damassa.com', generate_password_hash('admin123')))
+                       ('chef_josue','chef@damassa.com', generate_password_hash('oDEtfwa7ocHmP5lr4Mr-Hw')))
         # Migrate existing chef name
         chef = db.execute("SELECT id FROM users WHERE role='chef'").fetchone()
         if chef:

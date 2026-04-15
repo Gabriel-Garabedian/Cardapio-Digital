@@ -1,33 +1,90 @@
 from flask import (Flask, render_template, request, redirect,
-                   url_for, session, jsonify, flash, send_from_directory)
+                   url_for, session, jsonify, flash, send_from_directory, g)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import sqlite3, os, functools, uuid, urllib.parse, unicodedata, re
+import sqlite3, os, functools, uuid, urllib.parse, unicodedata, re, secrets, time
+from datetime import datetime
+from dotenv import load_dotenv
 
 # ─────────────────────────────────────────
-#  CONFIGURAÇÕES SEGURAS
-#  O secret key pode ser sobrescrito pela variável de ambiente SECRET_KEY
-# ─────────────────────────────────────────
+#  CONFIGURAÇÕES
+#  ─────────────────────────────────────────
+# Carrega variáveis de ambiente do arquivo .env (se existir)
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+
+def _get_db_path():
+    """Use DATABASE_PATH env var or default to local damassa.db"""
+    return os.environ.get("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "damassa.db"))
+
+def _get_upload_folder():
+    return os.environ.get("UPLOAD_FOLDER", os.path.join(os.path.dirname(__file__), "static", "uploads"))
+
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "damassa_secret_2025_XkJ9")
 
-DB_PATH       = os.path.join(os.path.dirname(__file__), "damassa.db")
-UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), "static", "uploads")
+# ─── Segurança de sessão ───
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key:
+    import warnings
+    warnings.warn(
+        "SECRET_KEY não configurada! Gerando uma chave temporária. "
+        "Em produção, defina a variável SECRET_KEY ou crie um arquivo .env. "
+        "Ex: SECRET_KEY=$(python -c 'import secrets; print(secrets.token_hex(32))')"
+    )
+    app.secret_key = secrets.token_hex(32)
+app.config.update({
+    'SESSION_COOKIE_HTTPONLY': True,
+    'SESSION_COOKIE_SAMESITE': 'Lax',
+    'PERMANENT_SESSION_LIFETIME': 3600 * 12,  # 12 horas
+    'MAX_CONTENT_LENGTH': 8 * 1024 * 1024,     # 8 MB
+})
+
+# HTTPS em produção (ativado automaticamente se HTTPS_PROXY ou DYNO existirem)
+if os.environ.get("PROD") or os.environ.get("DYNO"):
+    app.config['SESSION_COOKIE_SECURE'] = True
+
+DB_PATH       = _get_db_path()
+UPLOAD_FOLDER = _get_upload_folder()
 ALLOWED_EXT   = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# ← Número WhatsApp do chef (só dígitos com DDI, ex: 5581999999999)
-CHEF_WHATSAPP = "5581984552954"
+# Número WhatsApp do chef (só dígitos com DDI, ex: 5581999999999)
+# Pode ser sobrescrito pela variável de ambiente CHEF_WHATSAPP
+CHEF_WHATSAPP_DEFAULT = os.environ.get("CHEF_WHATSAPP", "5581984552954")
+# Cache do WhatsApp — sobrescrito pelo chef pelo painel
+_chef_whatsapp = CHEF_WHATSAPP_DEFAULT
+
+def get_chef_whatsapp():
+    return _chef_whatsapp
+
+def set_chef_whatsapp(value):
+    global _chef_whatsapp
+    _chef_whatsapp = value
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024   # 8 MB
+
+# ─────────────────────────────────────────
+#  RATE LIMITING SIMPLE (memória)
+# ─────────────────────────────────────────
+_rate_limits: dict[str, list[float]] = {}
+
+def _check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
+    now = time.time()
+    _rate_limits.setdefault(key, [])
+    # Remove requests outside the window
+    _rate_limits[key] = [t for t in _rate_limits[key] if now - t < window_seconds]
+    if len(_rate_limits[key]) >= max_requests:
+        return False
+    _rate_limits[key].append(now)
+    return True
 
 # ─────────────────────────────────────────
 #  HELPERS
 # ─────────────────────────────────────────
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    """SQLite helper. Para produção, recomenda-se PostgreSQL."""
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 def allowed_file(filename):
@@ -213,6 +270,18 @@ def login():
     if request.method == 'POST':
         email = request.form.get('email','').strip().lower()
         pw    = request.form.get('password','').strip()
+
+        # Rate limiting: 5 tentativas por minuto por IP
+        ip = request.remote_addr or 'unknown'
+        rate_key = f'login:{ip}'
+        if not _check_rate_limit(rate_key, max_requests=5, window_seconds=60):
+            flash('Muitas tentativas. Aguarde um minuto.','danger')
+            return redirect(url_for('login'))
+
+        if not email or not pw:
+            flash('Preencha e-mail e senha.','danger')
+            return redirect(url_for('login'))
+
         with get_db() as db:
             user = db.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
         if user and check_password_hash(user['password'], pw):
@@ -269,7 +338,11 @@ def menu():
 @app.route('/order/place', methods=['POST'])
 @login_required
 def place_order():
-    global CHEF_WHATSAPP
+    # Rate limiting: 10 pedidos por minuto por usuário
+    user_rate = f'order:{session.get("user_id","unknown")}'
+    if not _check_rate_limit(user_rate, max_requests=10, window_seconds=60):
+        return jsonify({'ok':False,'msg':'Muitos pedidos. Aguarde.'}), 429
+
     data    = request.get_json(force=True)
     cart    = data.get('cart', [])
     address = data.get('address','').strip()
@@ -322,7 +395,7 @@ def place_order():
         + (f"\n\n📝 *Obs:* {note}" if note else '')
         + f"\n\n_Pedido #{order_id}_"
     )
-    wa_url = f"https://wa.me/{CHEF_WHATSAPP}?text={urllib.parse.quote(msg)}"
+    wa_url = f"https://wa.me/{get_chef_whatsapp()}?text={urllib.parse.quote(msg)}"
     return jsonify({'ok':True,'order_id':order_id,'total':total,'wa_url':wa_url})
 
 @app.route('/orders')
@@ -388,17 +461,18 @@ def chef_dashboard():
     return render_template('chef.html', categories=cats, items=items,
                            total_items=total_items, total_users=total_users,
                            new_orders=new_orders, orders_grouped=og,
-                           chef_whatsapp=CHEF_WHATSAPP)
+                           chef_whatsapp=get_chef_whatsapp())
 
 @app.route('/chef/whatsapp', methods=['POST'])
 @login_required
 @chef_required
 def chef_update_whatsapp():
-    global CHEF_WHATSAPP
     n = request.form.get('whatsapp','').strip().replace(' ','').replace('-','').replace('+','')
-    if n:
-        CHEF_WHATSAPP = n
+    if n and all(c.isdigit() for c in n):
+        set_chef_whatsapp(n)
         flash(f'WhatsApp atualizado para {n}','success')
+    else:
+        flash('Número inválido. Use apenas dígitos com DDI.','danger')
     return redirect(url_for('chef_dashboard'))
 
 @app.route('/chef/order/<int:oid>/status', methods=['POST'])
@@ -558,4 +632,8 @@ def api_menu():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, port=5000)
+    # ⚠️ debug=True APENAS para desenvolvimento local
+    # Em produção, use: waitress-serve --port=$PORT damassa.wsgi:app
+    debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=debug_mode, port=port, host='0.0.0.0')

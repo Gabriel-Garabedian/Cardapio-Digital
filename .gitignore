@@ -25,3 +25,11 @@ Thumbs.db
 # Secrets
 .env
 *.env
+damassa/.env
+
+# Database WAL/SHM
+*.db-shm
+*.db-wal
+
+# Production artifacts
+*.log

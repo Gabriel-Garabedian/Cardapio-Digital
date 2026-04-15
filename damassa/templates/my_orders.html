@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Meus Pedidos{% endblock %}
+{% block body_class %}profile-page{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-header-inner">
+    <h1 class="page-title" data-aos="fade-right">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      Meus Pedidos
+    </h1>
+    <p class="page-sub">Histórico dos seus pedidos</p>
+  </div>
+</div>
+
+<div class="profile-body">
+  {% if grouped %}
+    {% for oid, og in grouped.items() %}
+    {% set o = og.order %}
+    <div class="order-card status-{{ o.status }}" data-aos="fade-up">
+      <div class="order-card-header">
+        <div>
+          <span class="order-id">#{{ o.id }}</span>
+          <span class="order-date">{{ o.created_at[:16].replace('T',' ') }}</span>
+        </div>
+        <span class="order-status-badge status-{{ o.status }}">
+          {% if o.status == 'novo' %}🔔 Aguardando
+          {% elif o.status == 'em_preparo' %}👨‍🍳 Em preparo
+          {% elif o.status == 'enviado' %}🚀 A caminho!
+          {% elif o.status == 'entregue' %}✅ Entregue
+          {% else %}{{ o.status }}{% endif %}
+        </span>
+      </div>
+      <div class="order-items-list">
+        {% for oi in og['items'] %}
+        <div class="order-item-row">
+          <span>{{ oi.quantity }}× {{ oi.item_name }}{% if oi.sauce %} <em>({{ oi.sauce }})</em>{% endif %}</span>
+          <span>R$ {{ "%.2f"|format(oi.unit_price * oi.quantity) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="order-card-footer">
+        <div class="order-address">📍 {{ o.address }}, nº {{ o.number }} — {{ o.city }}{% if o.note %}<br>📝 {{ o.note }}{% endif %}</div>
+        <span class="order-total">Total: <strong>R$ {{ "%.2f"|format(o.total) }}</strong></span>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div style="text-align:center;padding:60px 20px;">
+    <p style="font-size:3rem;margin-bottom:12px;">📦</p>
+    <p style="color:var(--text-muted);margin-bottom:20px;">Você ainda não fez nenhum pedido.</p>
+    <a href="{{ url_for('menu') }}" class="btn-submit" style="width:auto;display:inline-flex;padding:12px 28px;">Ver Cardápio</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

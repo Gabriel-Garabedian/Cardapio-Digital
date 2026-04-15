@@ -1,20 +1,21 @@
 from flask import (Flask, render_template, request, redirect,
-                   url_for, session, jsonify, flash, send_from_directory, g)
+                   url_for, session, jsonify, flash, send_from_directory)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-import sqlite3, os, functools, uuid, urllib.parse, unicodedata, re, secrets, time
-from datetime import datetime
+import os, functools, uuid, urllib.parse, unicodedata, re, secrets, time
 from dotenv import load_dotenv
 
 # ─────────────────────────────────────────
 #  CONFIGURAÇÕES
 #  ─────────────────────────────────────────
-# Carrega variáveis de ambiente do arquivo .env (se existir)
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
-def _get_db_path():
-    """Use DATABASE_PATH env var or default to local damassa.db"""
-    return os.environ.get("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "damassa.db"))
+USE_PG = bool(os.environ.get("DATABASE_URL"))
+
+if USE_PG:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    import psycopg2.extras
 
 def _get_upload_folder():
     return os.environ.get("UPLOAD_FOLDER", os.path.join(os.path.dirname(__file__), "static", "uploads"))
@@ -34,22 +35,17 @@ if not app.secret_key:
 app.config.update({
     'SESSION_COOKIE_HTTPONLY': True,
     'SESSION_COOKIE_SAMESITE': 'Lax',
-    'PERMANENT_SESSION_LIFETIME': 3600 * 12,  # 12 horas
-    'MAX_CONTENT_LENGTH': 8 * 1024 * 1024,     # 8 MB
+    'PERMANENT_SESSION_LIFETIME': 3600 * 12,
+    'MAX_CONTENT_LENGTH': 8 * 1024 * 1024,
 })
-
-# HTTPS em produção (ativado automaticamente se HTTPS_PROXY ou DYNO existirem)
 if os.environ.get("PROD") or os.environ.get("DYNO"):
     app.config['SESSION_COOKIE_SECURE'] = True
 
-DB_PATH       = _get_db_path()
 UPLOAD_FOLDER = _get_upload_folder()
 ALLOWED_EXT   = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-# Número WhatsApp do chef (só dígitos com DDI, ex: 5581999999999)
-# Pode ser sobrescrito pela variável de ambiente CHEF_WHATSAPP
+# ─── WhatsApp do chef ───
 CHEF_WHATSAPP_DEFAULT = os.environ.get("CHEF_WHATSAPP", "5581984552954")
-# Cache do WhatsApp — sobrescrito pelo chef pelo painel
 _chef_whatsapp = CHEF_WHATSAPP_DEFAULT
 
 def get_chef_whatsapp():
@@ -69,7 +65,6 @@ _rate_limits: dict[str, list[float]] = {}
 def _check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     now = time.time()
     _rate_limits.setdefault(key, [])
-    # Remove requests outside the window
     _rate_limits[key] = [t for t in _rate_limits[key] if now - t < window_seconds]
     if len(_rate_limits[key]) >= max_requests:
         return False
@@ -77,15 +72,74 @@ def _check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     return True
 
 # ─────────────────────────────────────────
-#  HELPERS
+#  CAMADA DE BANCO (SQLite ou PostgreSQL)
 # ─────────────────────────────────────────
+
+class _PgCursor:
+    """Wrapper que imita sqlite3.Connection para queries com PostgreSQL"""
+    def __init__(self, conn):
+        self._conn = conn
+        self._cur = conn.cursor(cursor_factory=RealDictCursor)
+        self.lastrowid = None
+
+    def execute(self, sql, params=None):
+        sql = sql.replace('?', '%s')
+        # Para INSERT, adiciona RETURNING id se não tiver
+        if sql.strip().upper().startswith('INSERT') and 'RETURNING' not in sql.upper():
+            sql = sql.rstrip(';') + ' RETURNING id'
+        self._cur.execute(sql, params or ())
+        # Captura lastrowid para INSERT com RETURNING
+        if sql.strip().upper().startswith('INSERT') and 'RETURNING' in sql.upper():
+            row = self._cur.fetchone()
+            if row:
+                self.lastrowid = row['id']
+        return self
+
+    def executescript(self, sql):
+        self._conn.autocommit = True
+        try:
+            for stmt in sql.split(';'):
+                stmt = stmt.strip()
+                if stmt:
+                    self._cur.execute(stmt.replace('?', '%s'))
+        finally:
+            self._conn.autocommit = False
+        return self
+
+    def fetchone(self):
+        r = self._cur.fetchone()
+        return dict(r) if r else None
+
+    def fetchall(self):
+        return [dict(r) for r in self._cur.fetchall()]
+
+    def commit(self):
+        self._conn.commit()
+
+    def close(self):
+        self._cur.close()
+        self._conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type:
+            self._conn.rollback()
+        self.close()
+
+
 def get_db():
-    """SQLite helper. Para produção, recomenda-se PostgreSQL."""
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA busy_timeout=5000")
-    return conn
+    if USE_PG:
+        return _PgCursor(psycopg2.connect(os.environ["DATABASE_URL"]))
+    else:
+        import sqlite3
+        DB_PATH = os.path.join(os.path.dirname(__file__), "damassa.db")
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT

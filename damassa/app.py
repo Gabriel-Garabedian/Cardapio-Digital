@@ -12,15 +12,6 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 USE_PG = bool(os.environ.get("DATABASE_URL"))
 
-if USE_PG:
-    # psycopg3 (versão 3) é pré-compilado e não precisa de dependências externas
-    try:
-        import psycopg
-    except ImportError:
-        import subprocess, sys
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg-binary"])
-        import psycopg
-
 def _get_upload_folder():
     return os.environ.get("UPLOAD_FOLDER", os.path.join(os.path.dirname(__file__), "static", "uploads"))
 
@@ -82,6 +73,7 @@ def _check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
 class _PgCursor:
     """Wrapper que imita sqlite3.Connection para queries com PostgreSQL"""
     def __init__(self, conn):
+        import psycopg
         self._conn = conn
         self._cur = conn.cursor(row_factory=psycopg.rows.DictRow)
         self.lastrowid = None
@@ -135,7 +127,8 @@ class _PgCursor:
 
 def get_db():
     if USE_PG:
-        return _PgCursor(psycopg2.connect(os.environ["DATABASE_URL"]))
+        import psycopg
+        return _PgCursor(psycopg.connect(os.environ["DATABASE_URL"]))
     else:
         import sqlite3
         DB_PATH = os.path.join(os.path.dirname(__file__), "damassa.db")

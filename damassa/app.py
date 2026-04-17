@@ -168,7 +168,7 @@ def init_db():
     with get_db() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         SERIAL PRIMARY KEY,
             username   TEXT    UNIQUE NOT NULL,
             email      TEXT    UNIQUE NOT NULL,
             password   TEXT    NOT NULL,
@@ -178,17 +178,17 @@ def init_db():
             address    TEXT    DEFAULT '',
             number     TEXT    DEFAULT '',
             city       TEXT    DEFAULT '',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         CREATE TABLE IF NOT EXISTS categories (
-            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            id   SERIAL PRIMARY KEY,
             slug TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
             size TEXT DEFAULT '500g',
             sort INTEGER DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS items (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             category_id INTEGER NOT NULL,
             name        TEXT    NOT NULL,
             description TEXT    DEFAULT '',
@@ -199,14 +199,14 @@ def init_db():
             FOREIGN KEY (category_id) REFERENCES categories(id)
         );
         CREATE TABLE IF NOT EXISTS sauces (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            id          SERIAL PRIMARY KEY,
             category_id INTEGER NOT NULL,
             name        TEXT    NOT NULL,
             price_type  TEXT    DEFAULT 'simples',
             FOREIGN KEY (category_id) REFERENCES categories(id)
         );
         CREATE TABLE IF NOT EXISTS orders (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         SERIAL PRIMARY KEY,
             user_id    INTEGER NOT NULL,
             total      REAL    NOT NULL,
             address    TEXT    DEFAULT '',
@@ -214,11 +214,11 @@ def init_db():
             city       TEXT    DEFAULT '',
             note       TEXT    DEFAULT '',
             status     TEXT    DEFAULT 'novo',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
         CREATE TABLE IF NOT EXISTS order_items (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            id         SERIAL PRIMARY KEY,
             order_id   INTEGER NOT NULL,
             item_id    INTEGER NOT NULL,
             item_name  TEXT    NOT NULL,

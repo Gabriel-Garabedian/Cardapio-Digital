@@ -102,13 +102,10 @@ class _PgCursor:
                     try:
                         self._cur.execute(stmt.replace('?', '%s'))
                     except Exception as e:
-                        # IGNORAR erros de "table already exists" - são esperados
-                        if 'already exists' not in str(e):
-                            print(f"executescript warning: {e}")
+                        # IGNORAR erros esperados
+                        pass
         finally:
             self._conn.autocommit = False
-            # Reset transaction state after any error
-            self._conn.rollback()
         return self
 
     def fetchone(self):

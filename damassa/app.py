@@ -73,9 +73,9 @@ def _check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
 class _PgCursor:
     """Wrapper que imita sqlite3.Connection para queries com PostgreSQL"""
     def __init__(self, conn):
-        import psycopg
+        from psycopg2.extras import RealDictCursor
         self._conn = conn
-        self._cur = conn.cursor(row_factory=psycopg.rows.DictRow)
+        self._cur = conn.cursor(cursor_factory=RealDictCursor)
         self.lastrowid = None
 
     def execute(self, sql, params=None):
@@ -127,8 +127,8 @@ class _PgCursor:
 
 def get_db():
     if USE_PG:
-        import psycopg
-        return _PgCursor(psycopg.connect(os.environ["DATABASE_URL"]))
+        import psycopg2
+        return _PgCursor(psycopg2.connect(os.environ["DATABASE_URL"]))
     else:
         import sqlite3
         DB_PATH = os.path.join(os.path.dirname(__file__), "damassa.db")

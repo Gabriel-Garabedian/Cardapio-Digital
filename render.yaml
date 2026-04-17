@@ -6,7 +6,7 @@ databases:
 services:
   - type: web
     name: damassa
-    runtime: python
+    runtime: python-3.12
     plan: free
     healthCheckPath: /api/menu
     envVars:

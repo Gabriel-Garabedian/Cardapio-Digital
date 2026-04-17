@@ -13,15 +13,13 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 USE_PG = bool(os.environ.get("DATABASE_URL"))
 
 if USE_PG:
-    # Instala o driver em runtime se não estiver disponível
-    import subprocess, sys
+    # psycopg3 (versão 3) é pré-compilado e não precisa de dependências externas
     try:
-        import psycopg2
+        import psycopg
     except ImportError:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg2-binary"])
-        import psycopg2
-    from psycopg2.extras import RealDictCursor
-    import psycopg2.extras
+        import subprocess, sys
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "psycopg-binary"])
+        import psycopg
 
 def _get_upload_folder():
     return os.environ.get("UPLOAD_FOLDER", os.path.join(os.path.dirname(__file__), "static", "uploads"))
@@ -85,7 +83,7 @@ class _PgCursor:
     """Wrapper que imita sqlite3.Connection para queries com PostgreSQL"""
     def __init__(self, conn):
         self._conn = conn
-        self._cur = conn.cursor(cursor_factory=RealDictCursor)
+        self._cur = conn.cursor(row_factory=psycopg.rows.DictRow)
         self.lastrowid = None
 
     def execute(self, sql, params=None):

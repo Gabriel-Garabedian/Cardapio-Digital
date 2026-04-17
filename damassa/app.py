@@ -107,6 +107,8 @@ class _PgCursor:
                             print(f"executescript warning: {e}")
         finally:
             self._conn.autocommit = False
+            # Reset transaction state after any error
+            self._conn.rollback()
         return self
 
     def fetchone(self):

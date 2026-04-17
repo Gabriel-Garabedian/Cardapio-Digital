@@ -129,8 +129,6 @@ class _PgCursor:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type:
-            self._conn.rollback()
         self.close()
 
 
@@ -174,6 +172,7 @@ def slugify(text):
 #  INIT DB
 # ─────────────────────────────────────────
 def init_db():
+    # Usa conexão separada para criar tabelas (evita transação abortada)
     with get_db() as db:
         db.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -238,6 +237,8 @@ def init_db():
         );
         """)
 
+    # Usa conexão SEPARADA para inserir dados (evita transação abortada)
+    with get_db() as db:
         # migration: add image column if missing
         try:
             db.execute("ALTER TABLE items ADD COLUMN image TEXT DEFAULT NULL")

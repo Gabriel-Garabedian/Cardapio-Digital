@@ -92,12 +92,19 @@ class _PgCursor:
         return self
 
     def executescript(self, sql):
+        # PostgreSQL não permite executar múltiplos statements com execute()
+        # Separamos e executamos um a um com autocommit
         self._conn.autocommit = True
         try:
             for stmt in sql.split(';'):
                 stmt = stmt.strip()
                 if stmt:
-                    self._cur.execute(stmt.replace('?', '%s'))
+                    try:
+                        self._cur.execute(stmt.replace('?', '%s'))
+                    except Exception as e:
+                        # IGNORAR erros de "table already exists" - são esperados
+                        if 'already exists' not in str(e):
+                            print(f"executescript warning: {e}")
         finally:
             self._conn.autocommit = False
         return self

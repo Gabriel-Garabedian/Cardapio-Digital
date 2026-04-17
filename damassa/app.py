@@ -95,6 +95,7 @@ class _PgCursor:
         # PostgreSQL não permite executar múltiplos statements com execute()
         # Separamos e executamos um a um com autocommit
         self._conn.autocommit = True
+        had_error = False
         try:
             for stmt in sql.split(';'):
                 stmt = stmt.strip()
@@ -103,9 +104,11 @@ class _PgCursor:
                         self._cur.execute(stmt.replace('?', '%s'))
                     except Exception as e:
                         # IGNORAR erros esperados
-                        pass
+                        had_error = True
         finally:
             self._conn.autocommit = False
+            if had_error:
+                self._conn.rollback()
         return self
 
     def fetchone(self):

@@ -93,22 +93,13 @@ class _PgCursor:
 
     def executescript(self, sql):
         # PostgreSQL não permite executar múltiplos statements com execute()
-        # Separamos e executamos um a um com autocommit
-        self._conn.autocommit = True
-        had_error = False
-        try:
-            for stmt in sql.split(';'):
-                stmt = stmt.strip()
-                if stmt:
-                    try:
-                        self._cur.execute(stmt.replace('?', '%s'))
-                    except Exception as e:
-                        # IGNORAR erros esperados
-                        had_error = True
-        finally:
-            self._conn.autocommit = False
-            if had_error:
-                self._conn.rollback()
+        # Separamos e executamos um a um
+        statements = [s.strip() for s in sql.split(';') if s.strip()]
+        for stmt in statements:
+            try:
+                self._cur.execute(stmt.replace('?', '%s'))
+            except Exception:
+                pass  # IGNORAR erros esperados (tabela já existe, etc.)
         return self
 
     def fetchone(self):
@@ -171,104 +162,68 @@ def slugify(text):
 # ─────────────────────────────────────────
 #  INIT DB
 # ─────────────────────────────────────────
-def init_db():
-    # Usa conexão separada para criar tabelas (evita transação abortada)
+def _create_tables():
+    """Cria todas as tabelas do banco. Usa conexão própria."""
     with get_db() as db:
-        db.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id         SERIAL PRIMARY KEY,
-            username   TEXT    UNIQUE NOT NULL,
-            email      TEXT    UNIQUE NOT NULL,
-            password   TEXT    NOT NULL,
-            role       TEXT    NOT NULL DEFAULT 'cliente',
-            full_name  TEXT    DEFAULT '',
-            phone      TEXT    DEFAULT '',
-            address    TEXT    DEFAULT '',
-            number     TEXT    DEFAULT '',
-            city       TEXT    DEFAULT '',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS categories (
-            id   SERIAL PRIMARY KEY,
-            slug TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            size TEXT DEFAULT '500g',
-            sort INTEGER DEFAULT 0
-        );
-        CREATE TABLE IF NOT EXISTS items (
-            id          SERIAL PRIMARY KEY,
-            category_id INTEGER NOT NULL,
-            name        TEXT    NOT NULL,
-            description TEXT    DEFAULT '',
-            price       REAL    NOT NULL,
-            active      INTEGER DEFAULT 1,
-            sort        INTEGER DEFAULT 0,
-            image       TEXT    DEFAULT NULL,
-            FOREIGN KEY (category_id) REFERENCES categories(id)
-        );
-        CREATE TABLE IF NOT EXISTS sauces (
-            id          SERIAL PRIMARY KEY,
-            category_id INTEGER NOT NULL,
-            name        TEXT    NOT NULL,
-            price_type  TEXT    DEFAULT 'simples',
-            FOREIGN KEY (category_id) REFERENCES categories(id)
-        );
-        CREATE TABLE IF NOT EXISTS orders (
-            id         SERIAL PRIMARY KEY,
-            user_id    INTEGER NOT NULL,
-            total      REAL    NOT NULL,
-            address    TEXT    DEFAULT '',
-            number     TEXT    DEFAULT '',
-            city       TEXT    DEFAULT '',
-            note       TEXT    DEFAULT '',
-            status     TEXT    DEFAULT 'novo',
+        # users
+        db.execute("""CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL,
+            email TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'cliente', full_name TEXT DEFAULT '',
+            phone TEXT DEFAULT '', address TEXT DEFAULT '', number TEXT DEFAULT '',
+            city TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS categories (
+            id SERIAL PRIMARY KEY, slug TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL, size TEXT DEFAULT '500g', sort INTEGER DEFAULT 0)""")
+        db.execute("""CREATE TABLE IF NOT EXISTS items (
+            id SERIAL PRIMARY KEY, category_id INTEGER NOT NULL,
+            name TEXT NOT NULL, description TEXT DEFAULT '',
+            price REAL NOT NULL, active INTEGER DEFAULT 1,
+            sort INTEGER DEFAULT 0, image TEXT DEFAULT NULL,
+            FOREIGN KEY (category_id) REFERENCES categories(id))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS sauces (
+            id SERIAL PRIMARY KEY, category_id INTEGER NOT NULL,
+            name TEXT NOT NULL, price_type TEXT DEFAULT 'simples',
+            FOREIGN KEY (category_id) REFERENCES categories(id))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS orders (
+            id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, total REAL NOT NULL,
+            address TEXT DEFAULT '', number TEXT DEFAULT '', city TEXT DEFAULT '',
+            note TEXT DEFAULT '', status TEXT DEFAULT 'novo',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        );
-        CREATE TABLE IF NOT EXISTS order_items (
-            id         SERIAL PRIMARY KEY,
-            order_id   INTEGER NOT NULL,
-            item_id    INTEGER NOT NULL,
-            item_name  TEXT    NOT NULL,
-            quantity   INTEGER NOT NULL DEFAULT 1,
-            unit_price REAL    NOT NULL,
-            sauce      TEXT    DEFAULT '',
-            FOREIGN KEY (order_id) REFERENCES orders(id)
-        );
-        """)
+            FOREIGN KEY (user_id) REFERENCES users(id))""")
+        db.execute("""CREATE TABLE IF NOT EXISTS order_items (
+            id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL, item_id INTEGER NOT NULL,
+            item_name TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 1,
+            unit_price REAL NOT NULL, sauce TEXT DEFAULT '',
+            FOREIGN KEY (order_id) REFERENCES orders(id))""")
+        db.commit()
 
-    # Usa conexão SEPARADA para inserir dados (evita transação abortada)
+def _seed_data():
+    """Insere dados iniciais (chef, categorias, pratos). Usa conexão PRÓPRIA."""
     with get_db() as db:
-        # migration: add image column if missing
-        try:
-            db.execute("ALTER TABLE items ADD COLUMN image TEXT DEFAULT NULL")
-            db.commit()
-        except Exception:
-            pass
-
-        # Seed chef (locked)
+        # Seed chef
         if not db.execute("SELECT id FROM users WHERE email='chef@damassa.com'").fetchone():
-            db.execute("INSERT INTO users (username,email,password,role,full_name) VALUES (?,?,?,'chef','Josue Matheus')",
+            db.execute("INSERT INTO users (username,email,password,role,full_name) VALUES (%s,%s,%s,'chef','Josue Matheus')",
                        ('chef_josue','chef@damassa.com', generate_password_hash('oDEtfwa7ocHmP5lr4Mr-Hw')))
-        # Migrate existing chef name
-        chef = db.execute("SELECT id FROM users WHERE role='chef'").fetchone()
-        if chef:
-            db.execute("UPDATE users SET full_name='Josue Matheus',username='chef_josue' WHERE role='chef'")
+            db.commit()
 
         # Seed categories
-        for slug,name,size,sort in [
+        for slug, name, size, sort in [
             ('lasanha','Lasanhas','500g',1),
             ('gnocchi','Gnocchi (Nhoque)','500g',2),
             ('fettuccine','Fettuccine','500g',3),
             ('ravioli','Ravioli','500g',4)]:
-            if not db.execute("SELECT id FROM categories WHERE slug=?",(slug,)).fetchone():
-                db.execute("INSERT INTO categories (slug,name,size,sort) VALUES (?,?,?,?)",(slug,name,size,sort))
+            if not db.execute("SELECT id FROM categories WHERE slug=%s",(slug,)).fetchone():
+                db.execute("INSERT INTO categories (slug,name,size,sort) VALUES (%s,%s,%s,%s)",(slug,name,size,sort))
+        db.commit()
 
         def cid(slug):
-            return db.execute("SELECT id FROM categories WHERE slug=?",(slug,)).fetchone()['id']
+            r = db.execute("SELECT id FROM categories WHERE slug=%s",(slug,)).fetchone()
+            return r['id'] if r else None
 
+        # Seed items only if none exist
         if db.execute("SELECT COUNT(*) as c FROM items").fetchone()['c'] == 0:
-            for i,(s,n,d,p) in enumerate([
+            items = [
                 ('lasanha','Alla Bolognesi (Bolonhesa)','Massa artesanal, ragù de carne moída, molho bechamel, queijo muçarela e finalizada com queijo parmesão.',45),
                 ('lasanha','Frango','Massa artesanal, frango desfiado, molho bechamel, queijo muçarela e finalizada com queijo parmesão.',45),
                 ('lasanha','Presunto e Queijo','Massa artesanal, presunto, queijo muçarela e finalizada com molho bechamel e queijo parmesão.',45),
@@ -283,18 +238,27 @@ def init_db():
                 ('ravioli','Ricota com Limão Siciliano','Ravioli de ricota com toque cítrico do limão siciliano.',45),
                 ('ravioli','Ragù de Ossobuco','Ravioli com ragù de ossobuco desfiado, intenso e aromático.',45),
                 ('ravioli','Camarão com Cream Cheese','Ravioli recheado com camarão e cream cheese, leve e sofisticado.',55),
-            ]):
-                db.execute("INSERT INTO items (category_id,name,description,price,sort) VALUES (?,?,?,?,?)",(cid(s),n,d,p,i))
-
-        if db.execute("SELECT COUNT(*) as c FROM sauces").fetchone()['c'] == 0:
-            for s in ['gnocchi','fettuccine']:
+            ]
+            for i, (s, n, d, p) in enumerate(items):
                 c = cid(s)
-                for n in ['Pomodoro','Bechamel']:
-                    db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (?,?,?)",(c,n,'simples'))
-                for n in ['Bolonhesa','Quatro Queijos','Costela na Cerveja','Ragù de Ossobuco','Filé Mignon com Gorgonzola','Camarão com Espinafre']:
-                    db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (?,?,?)",(c,n,'premium'))
+                if c:
+                    db.execute("INSERT INTO items (category_id,name,description,price,sort) VALUES (%s,%s,%s,%s,%s)",(c,n,d,p,i))
+            db.commit()
 
-        db.commit()
+        # Seed sauces only if none exist
+        if db.execute("SELECT COUNT(*) as c FROM sauces").fetchone()['c'] == 0:
+            for cat_slug in ['gnocchi','fettuccine']:
+                c = cid(cat_slug)
+                if c:
+                    for n in ['Pomodoro','Bechamel']:
+                        db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (%s,%s,'simples')",(c,n))
+                    for n in ['Bolonhesa','Quatro Queijos','Costela na Cerveja','Ragù de Ossobuco','Filé Mignon com Gorgonzola','Camarão com Espinafre']:
+                        db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (%s,%s,'premium')",(c,n))
+            db.commit()
+
+def init_db():
+    _create_tables()
+    _seed_data()
 
 # ─────────────────────────────────────────
 #  DECORATORS

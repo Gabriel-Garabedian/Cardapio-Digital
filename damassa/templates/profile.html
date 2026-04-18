@@ -22,7 +22,7 @@
     <div>
       <div class="avatar-name">{{ user.full_name or user.username }}</div>
       <div class="avatar-email">{{ user.email }}</div>
-      <div class="avatar-since">Cliente desde {{ user.created_at[:10] }}</div>
+      <div class="avatar-since">Cliente desde {{ user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A' }}</div>
     </div>
   </div>
 

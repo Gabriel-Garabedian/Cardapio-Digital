@@ -21,7 +21,7 @@
       <div class="order-card-header">
         <div>
           <span class="order-id">#{{ o.id }}</span>
-          <span class="order-date">{{ o.created_at[:16].replace('T',' ') }}</span>
+          <span class="order-date">{{ o.created_at.strftime('%d/%m/%Y %H:%M') if o.created_at else 'N/A' }}</span>
         </div>
         <span class="order-status-badge status-{{ o.status }}">
           {% if o.status == 'novo' %}🔔 Aguardando

@@ -140,7 +140,7 @@
             {% elif o.status == 'entregue' %}✅ Entregue
             {% else %}{{ o.status }}{% endif %}
           </span>
-          <span class="order-date">{{ o.created_at[:16].replace('T',' ') }}</span>
+          <span class="order-date">{{ o.created_at.strftime('%d/%m/%Y %H:%M') if o.created_at else 'N/A' }}</span>
         </div>
       </div>
 

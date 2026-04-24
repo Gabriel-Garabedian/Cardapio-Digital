@@ -104,6 +104,23 @@ body {
 }
 .btn-logout:hover { border-color: var(--red); color: #ff9080; }
 
+.btn-login {
+  padding: 6px 16px; border-radius: var(--radius-sm);
+  border: 1px solid rgba(255,255,255,.15);
+  background: transparent; color: rgba(255,249,243,.7);
+  font-family: 'DM Sans',sans-serif; font-size: .8rem; cursor: pointer;
+  text-decoration: none; transition: all var(--transition);
+}
+.btn-login:hover { border-color: var(--gold); color: var(--gold-light); }
+
+.btn-cadastro {
+  padding: 6px 16px; border-radius: var(--radius-sm);
+  background: var(--gold); color: #1a1a1a;
+  font-family: 'DM Sans',sans-serif; font-size: .8rem; font-weight: 600;
+  text-decoration: none; transition: all var(--transition);
+}
+.btn-cadastro:hover { background: var(--gold-light); }
+
 /* Burger (mobile) */
 .nav-burger {
   display: none; flex-direction: column; justify-content: center;

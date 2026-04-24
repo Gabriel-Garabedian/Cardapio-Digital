@@ -286,9 +286,7 @@ def chef_required(f):
 # ─────────────────────────────────────────
 @app.route('/')
 def index():
-    if 'user_id' in session:
-        return redirect(url_for('menu') if session['role']=='cliente' else url_for('chef_dashboard'))
-    return redirect(url_for('login'))
+    return redirect(url_for('menu'))
 
 @app.route('/login', methods=['GET','POST'])
 def login():
@@ -348,14 +346,26 @@ def logout():
 # ─────────────────────────────────────────
 #  CUSTOMER ROUTES
 # ─────────────────────────────────────────
-@app.route('/menu')
+@app.route('/painel')
 @login_required
-def menu():
+def painel():
+    if session['role'] == 'chef':
+        return redirect(url_for('chef_dashboard'))
     with get_db() as db:
         cats   = db.execute("SELECT * FROM categories ORDER BY sort").fetchall()
         iraw   = db.execute("SELECT i.*,c.slug cat_slug FROM items i JOIN categories c ON i.category_id=c.id WHERE i.active=1 ORDER BY i.sort").fetchall()
         sraw   = db.execute("SELECT * FROM sauces ORDER BY id").fetchall()
         user   = db.execute("SELECT * FROM users WHERE id=?",(session['user_id'],)).fetchone()
+    items  = {c['slug']:[r for r in iraw if r['cat_slug']==c['slug']] for c in cats}
+    sauces = {c['slug']:[r for r in sraw if r['category_id']==c['id']] for c in cats}
+    return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user)
+@app.route('/menu')
+def menu():
+    with get_db() as db:
+        cats   = db.execute("SELECT * FROM categories ORDER BY sort").fetchall()
+        iraw   = db.execute("SELECT i.*,c.slug cat_slug FROM items i JOIN categories c ON i.category_id=c.id WHERE i.active=1 ORDER BY i.sort").fetchall()
+        sraw   = db.execute("SELECT * FROM sauces ORDER BY id").fetchall()
+        user   = db.execute("SELECT * FROM users WHERE id=?",(session.get('user_id'),)).fetchone() if session.get('user_id') else None
     items  = {c['slug']:[r for r in iraw if r['cat_slug']==c['slug']] for c in cats}
     sauces = {c['slug']:[r for r in sraw if r['category_id']==c['id']] for c in cats}
     return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user)
@@ -646,6 +656,23 @@ def chef_delete_category(cid):
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(UPLOAD_FOLDER, filename)
+
+@app.route('/api/checkout-login', methods=['POST'])
+def api_checkout_login():
+    """Login rápido via AJAX no checkout."""
+    if session.get('user_id'):
+        return jsonify({'ok':True,'logged':True})
+    email = request.get_json(force=True).get('email','').strip().lower()
+    pw    = request.get_json(force=True).get('password','').strip()
+    if not email or not pw:
+        return jsonify({'ok':False,'msg':'Preencha e-mail e senha.'}), 400
+    with get_db() as db:
+        user = db.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
+    if user and check_password_hash(user['password'], pw):
+        session.update({'user_id':user['id'],'role':user['role'],
+                        'username':user['username'],'full_name':user['full_name'] or user['username']})
+        return jsonify({'ok':True,'logged':True,'role':user['role']})
+    return jsonify({'ok':False,'msg':'E-mail ou senha incorretos.'}), 401
 
 @app.route('/api/menu')
 def api_menu():

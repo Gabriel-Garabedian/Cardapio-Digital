@@ -510,6 +510,25 @@ def my_orders():
     grouped = {o['id']:{'order':o,'items':[i for i in ois if i['order_id']==o['id']]} for o in orders}
     return render_template('my_orders.html', grouped=grouped)
 
+@app.route('/order/<int:oid>/cancel', methods=['POST'])
+@login_required
+def cancel_order(oid):
+    with get_db() as db:
+        canceled = db.execute("UPDATE orders SET status='cancelado' WHERE id=? AND user_id=? AND status='novo' RETURNING id",
+                              (oid, session['user_id'])).fetchone()
+        if not canceled:
+            order = db.execute('SELECT status FROM orders WHERE id=? AND user_id=?', (oid, session['user_id'])).fetchone()
+            if not order:
+                return 'Pedido não encontrado', 404
+        db.commit()
+    if canceled:
+        flash(f'Pedido #{oid} cancelado. Se já enviou a mensagem pelo WhatsApp, avise o chef por lá também.', 'success')
+    elif order['status'] == 'cancelado':
+        flash('Esse pedido já está cancelado.', 'info')
+    else:
+        flash('O pedido não está mais aguardando. Combine o cancelamento com o chef pelo WhatsApp.', 'danger')
+    return redirect(url_for('my_orders'))
+
 @app.route('/profile', methods=['GET','POST'])
 @login_required
 def profile():
@@ -607,7 +626,9 @@ def chef_order_status(oid):
     if s not in {'novo', 'em_preparo', 'enviado', 'entregue'}:
         return 'Status inválido', 400
     with get_db() as db:
-        db.execute("UPDATE orders SET status=? WHERE id=?",(s,oid))
+        updated = db.execute("UPDATE orders SET status=? WHERE id=? AND status<>'cancelado' RETURNING id", (s, oid)).fetchone()
+        if not updated:
+            return 'Pedido não encontrado ou já cancelado. Atualize o painel.', 409
         db.commit()
     return redirect(url_for('chef_dashboard'))
 

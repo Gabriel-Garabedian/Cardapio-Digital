@@ -57,11 +57,31 @@ async (page) => {
   check(decodeURIComponent(whatsapp).includes('80.00'), 'Link do WhatsApp com total errado');
   await page.goto(base + '/orders');
   check((await page.locator('body').innerText()).includes('Batata Inglesa'), 'Pedido ausente do histórico');
+  const orderNumber = await page.locator('.order-id').textContent();
+  const cancel = page.getByRole('button', { name: 'Cancelar pedido', exact: true });
+  for (const width of [360, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Histórico com overflow em ${width}px`);
+    check(await cancel.evaluate(element => element.getBoundingClientRect().height >= 44), 'Cancelamento pequeno para toque');
+  }
+  await page.screenshot({ path: 'output/playwright/orders-cancel-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  page.once('dialog', dialog => dialog.dismiss());
+  await cancel.click();
+  check(await cancel.isVisible(), 'Desistir da confirmação alterou o pedido');
+  page.once('dialog', dialog => dialog.accept());
+  await cancel.click();
+  await page.locator('.order-card.status-cancelado').waitFor();
+  check(await cancel.count() === 0, 'Pedido cancelado ainda oferece cancelamento');
+  await page.reload();
+  check(await page.locator('.order-id').textContent() === orderNumber, 'Identificador do pedido foi alterado');
+  check(await page.locator('.order-status-badge').innerText() === 'Cancelado', 'Cancelamento não persistiu');
+  await page.screenshot({ path: 'output/playwright/orders-canceled-mobile.png', fullPage: true });
   await page.goto(base + '/profile');
   check(await page.locator('[name=full_name]').inputValue() === 'Teste de funcionamento', 'Perfil inválido');
   await page.goto(base + '/chef');
   check(new URL(page.url()).pathname === '/menu', 'Cliente conseguiu acessar painel do chef');
   check(errors.length === 0, `Erros JavaScript: ${errors.join(', ')}`);
   await page.screenshot({ path: 'output/playwright/menu-mobile.png', fullPage: true });
-  console.log(JSON.stringify({ ok: true, base, email, viewports: sizes, javascriptErrors: errors, whatsappIntercepted: true }));
+  console.log(JSON.stringify({ ok: true, base, email, viewports: sizes, javascriptErrors: errors, whatsappIntercepted: true, cancellationVerified: true }));
 }

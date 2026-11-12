@@ -117,6 +117,61 @@ class AppTests(unittest.TestCase):
         with web.get_db() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) c FROM orders').fetchone()['c'], 0)
 
+    def test_customer_can_cancel_waiting_order_and_chef_cannot_reopen_it(self):
+        self.customer()
+        oid = self.order().json['order_id']
+        self.assertIn(f'/order/{oid}/cancel', self.client.get('/orders').text)
+        response = self.client.post(f'/order/{oid}/cancel', follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('Cancelado', response.text)
+        self.assertNotIn(f'/order/{oid}/cancel', response.text)
+        with web.get_db() as db:
+            self.assertEqual(db.execute('SELECT status FROM orders WHERE id=?', (oid,)).fetchone()['status'], 'cancelado')
+            self.assertEqual(db.execute('SELECT COUNT(*) c FROM order_items WHERE order_id=?', (oid,)).fetchone()['c'], 1)
+        self.assertEqual(self.client.post(f'/order/{oid}/cancel').status_code, 302)
+        self.client.get('/logout')
+        self.chef()
+        page = self.client.get('/chef').text
+        self.assertIn('Cancelado', page)
+        self.assertNotIn(f'/chef/order/{oid}/status', page)
+        self.assertEqual(self.client.post(f'/chef/order/{oid}/status', data={'status': 'em_preparo'}).status_code, 409)
+        with web.get_db() as db:
+            self.assertEqual(db.execute('SELECT status FROM orders WHERE id=?', (oid,)).fetchone()['status'], 'cancelado')
+
+    def test_cancellation_requires_owner_login_post_and_csrf(self):
+        self.customer()
+        oid = self.order().json['order_id']
+        self.assertEqual(self.client.get(f'/order/{oid}/cancel').status_code, 405)
+        self.client.get('/logout')
+        self.assertEqual(self.client.post(f'/order/{oid}/cancel').status_code, 302)
+        self.client.post('/register', data={'username': 'outro', 'email': 'outro@example.test', 'password': 'password123'})
+        self.client.post('/login', data={'email': 'outro@example.test', 'password': 'password123'})
+        self.assertEqual(self.client.post(f'/order/{oid}/cancel').status_code, 404)
+        self.assertEqual(self.client.post('/order/999999/cancel').status_code, 404)
+        with web.get_db() as db:
+            self.assertEqual(db.execute('SELECT status FROM orders WHERE id=?', (oid,)).fetchone()['status'], 'novo')
+        self.client.get('/logout')
+        self.client.post('/login', data={'email': 'cliente@example.test', 'password': 'password123'})
+        web.app.config['WTF_CSRF_ENABLED'] = True
+        self.assertEqual(self.client.post(f'/order/{oid}/cancel').status_code, 400)
+        with web.get_db() as db:
+            self.assertEqual(db.execute('SELECT status FROM orders WHERE id=?', (oid,)).fetchone()['status'], 'novo')
+
+    def test_customer_cannot_cancel_an_order_after_preparation_starts(self):
+        self.customer()
+        oid = self.order().json['order_id']
+        for status in ['em_preparo', 'enviado', 'entregue']:
+            with self.subTest(status=status):
+                with web.get_db() as db:
+                    db.execute('UPDATE orders SET status=? WHERE id=?', (status, oid))
+                    db.commit()
+                self.assertNotIn(f'/order/{oid}/cancel', self.client.get('/orders').text)
+                response = self.client.post(f'/order/{oid}/cancel', follow_redirects=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('não está mais aguardando', response.text)
+                with web.get_db() as db:
+                    self.assertEqual(db.execute('SELECT status FROM orders WHERE id=?', (oid,)).fetchone()['status'], status)
+
     def test_expired_session_checkout_returns_json(self):
         response = self.order()
         self.assertEqual(response.status_code, 401)

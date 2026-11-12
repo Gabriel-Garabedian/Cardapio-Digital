@@ -686,6 +686,7 @@ select.form-input { padding-left: 16px; cursor: pointer; }
 .order-card.status-em_preparo { border-left:4px solid #3498db; }
 .order-card.status-enviado { border-left:4px solid #9b59b6; }
 .order-card.status-entregue { border-left:4px solid var(--green); }
+.order-card.status-cancelado { border-left:4px solid var(--text-muted); }
 
 .order-card-header { display:flex;justify-content:space-between;align-items:flex-start;padding:16px 20px;background:var(--warm-white);border-bottom:1px solid var(--border);flex-wrap:wrap;gap:8px; }
 .order-id { font-family:'Playfair Display',serif;font-size:1.1rem;font-weight:700;color:var(--brown);margin-right:10px; }
@@ -698,6 +699,7 @@ select.form-input { padding-left: 16px; cursor: pointer; }
 .order-status-badge.status-em_preparo { background:rgba(52,152,219,.12);color:#2980b9; }
 .order-status-badge.status-enviado { background:rgba(155,89,182,.12);color:#8e44ad; }
 .order-status-badge.status-entregue { background:rgba(45,106,79,.12);color:var(--green); }
+.order-status-badge.status-cancelado { background:var(--border);color:var(--brown); }
 
 .order-items-list { padding:14px 20px; }
 .order-item-row { display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:.88rem; }
@@ -708,6 +710,9 @@ select.form-input { padding-left: 16px; cursor: pointer; }
 .order-address { font-size:.82rem;color:var(--text-muted);line-height:1.5; }
 .order-total { font-size:.9rem;color:var(--text-muted); }
 .order-total strong { color:var(--brown);font-family:'Playfair Display',serif;font-size:1.1rem; }
+.order-cancel-actions { display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;padding:14px 20px; }
+.order-cancel-actions p { flex:1 1 220px;font-size:.82rem;line-height:1.5;color:var(--text-muted); }
+.order-cancel-actions .btn-cancel { min-height:44px;padding:10px 16px;color:var(--red); }
 
 .status-select { min-height:44px;padding:7px 12px;border-radius:var(--radius-sm);border:1.5px solid var(--border);background:white;font-family:'DM Sans',sans-serif;font-size:.82rem;cursor:pointer;outline:none;transition:border-color .2s; }
 .status-select:focus { border-color:var(--gold); }

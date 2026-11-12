@@ -9,7 +9,7 @@
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
       Meus Pedidos
     </h1>
-    <p class="page-sub">Histórico dos seus pedidos</p>
+    <p class="page-sub">Histórico dos seus pedidos. Cada número identifica um pedido da loja para acompanhar com o chef.</p>
   </div>
 </div>
 
@@ -28,6 +28,7 @@
           {% elif o.status == 'em_preparo' %}Em preparo
           {% elif o.status == 'enviado' %}A caminho!
           {% elif o.status == 'entregue' %}Entregue
+          {% elif o.status == 'cancelado' %}Cancelado
           {% else %}{{ o.status }}{% endif %}
         </span>
       </div>
@@ -43,6 +44,15 @@
         <div class="order-address">{{ o.address }}, nº {{ o.number }} — {{ o.city }}{% if o.note %}<br>{{ o.note }}{% endif %}</div>
         <span class="order-total">Total: <strong>R$ {{ "%.2f"|format(o.total) }}</strong></span>
       </div>
+      {% if o.status == 'novo' %}
+      <div class="order-cancel-actions">
+        <p>Se já enviou este pedido pelo WhatsApp, avise o chef ao cancelar.</p>
+        <form method="POST" action="{{ url_for('cancel_order', oid=o.id) }}" onsubmit="return confirm('Cancelar o pedido #{{ o.id }}?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn-cancel">Cancelar pedido</button>
+        </form>
+      </div>
+      {% endif %}
     </div>
     {% endfor %}
   {% else %}

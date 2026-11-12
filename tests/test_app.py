@@ -52,6 +52,34 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(data['categories']), 4)
         self.assertTrue(all(i['id'] is not None for i in data['items']))
 
+    def test_link_preview_is_present_without_login(self):
+        from html.parser import HTMLParser
+
+        class Metadata(HTMLParser):
+            tags = {}
+
+            def handle_starttag(self, tag, attributes):
+                values = dict(attributes)
+                if tag == 'meta':
+                    self.tags[values.get('property', values.get('name'))] = values.get('content')
+
+        page = self.client.get('/', follow_redirects=True)
+        self.assertEqual(page.status_code, 200)
+        metadata = Metadata()
+        metadata.feed(page.text)
+        self.assertEqual(metadata.tags.get('og:title'), 'Da Massa — Massas artesanais')
+        self.assertEqual(metadata.tags.get('og:url'), 'https://damassa-cardapio.vercel.app/menu')
+        self.assertEqual(metadata.tags.get('og:image'), 'https://damassa-cardapio.vercel.app/static/images/da-massa-compartilhar-v1.png')
+        self.assertEqual(metadata.tags.get('twitter:card'), 'summary_large_image')
+        with self.client.get('/static/images/da-massa-compartilhar-v1.png') as image:
+            self.assertEqual(image.status_code, 200)
+            self.assertEqual(image.mimetype, 'image/png')
+            self.assertLess(len(image.data), 8 * 1024 * 1024)
+            from PIL import Image
+            with Image.open(io.BytesIO(image.data)) as artwork:
+                self.assertEqual(str(artwork.width), metadata.tags.get('og:image:width'))
+                self.assertEqual(str(artwork.height), metadata.tags.get('og:image:height'))
+
     def test_duplicate_registration_and_profile_do_not_crash(self):
         self.customer()
         response = self.client.post('/register', data={'username': 'cliente', 'email': 'cliente@example.test', 'password': 'password123'})

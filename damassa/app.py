@@ -410,6 +410,12 @@ def menu():
     sauces = {c['slug']:[r for r in sraw if r['category_id']==c['id']] for c in cats}
     return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user, chef_whatsapp=get_chef_whatsapp())
 
+app.add_url_rule('/cardapio', endpoint='shared_menu', view_func=menu)
+
+@app.route('/favicon.ico')
+def favicon():
+    return app.send_static_file('icons/da-massa-v2.ico')
+
 @app.route('/order/place', methods=['POST'])
 @login_required
 def place_order():

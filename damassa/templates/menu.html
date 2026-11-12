@@ -5,19 +5,22 @@
 {% block content %}
 <!-- Hero -->
 <section class="menu-hero">
-  <div class="hero-content">
-    {% if session.get('user_id') %}
-    <p class="hero-eyebrow">
-      Olá, {{ session.get('full_name') or session.get('username') }}!
-    </p>
-    {% endif %}
-    <h1 class="hero-title"><span class="hero-em">Da</span> Massa</h1>
-    <p class="hero-sub">Massas artesanais feitas pelo chef Josue Matheus</p>
+  <div class="menu-hero-inner">
+    <div class="hero-content">
+      <h1 class="hero-title"><span>Massas</span><span>artesanais.</span></h1>
+    </div>
+    <div class="hero-detail">
+      <p class="hero-description">Escolha sua massa e seu molho. O pedido vai direto para o WhatsApp do chef.</p>
+      <p class="hero-chef">Chef Josue Matheus</p>
+      <a class="hero-action" href="#cardapio">Escolher meu prato <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v16m-6-6 6 6 6-6"/></svg></a>
+    </div>
   </div>
 </section>
 
+<div class="menu-layout" id="cardapio">
 <!-- Category Nav -->
-<div class="category-nav" id="categoryNav">
+<nav class="category-nav" id="categoryNav" aria-label="Categorias do cardápio">
+  <h2 class="category-title">Cardápio</h2>
   <div class="cat-scroller">
     {% for cat in categories %}
     <button class="cat-btn {% if loop.first %}active{% endif %}"
@@ -27,7 +30,7 @@
     </button>
     {% endfor %}
   </div>
-</div>
+</nav>
 
 <!-- Menu Body -->
 <main class="menu-body">
@@ -109,6 +112,7 @@
   </section>
   {% endfor %}
 </main>
+</div>
 
 <footer class="menu-footer">
   <div class="footer-brand"><span class="logo-em">Da</span> Massa</div>

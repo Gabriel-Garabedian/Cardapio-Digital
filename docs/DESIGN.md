@@ -10,3 +10,7 @@ Pedido: reduzir a aparência genérica e o excesso de emojis, preservando o card
 - Sem novas bibliotecas, sem novos produtos/preços, sem substituir fotos reais pela capa ilustrativa. A prévia de compartilhamento existente permanece.
 
 Frontend Design e UI/UX Pro Max aplicadas; agente de design fez revisão somente leitura e outro agente cuidou dos templates/JS. CSS e integração sob responsabilidade do agente principal. Plugin Vercel utilizado para conferir publicação. Evidências visuais em output/playwright, ignoradas pelo Git.
+
+## Ajuste pedido em seguida
+
+Usuário pediu uma animação como havia antes e um degradê entre cabeçalho marrom e área clara do cardápio. Entrada discreta de500ms no hero e320ms na categoria, deslocamento8px, sem ocultação permanente. Transição marrom/creme44px abaixo da navegação com espaço reservado para não cobrir os títulos. Hover com sombra leve. Preferência de movimento reduzido respeitada por CSS e pela rolagem horizontal. Verificação em tests/browser-motion.js.

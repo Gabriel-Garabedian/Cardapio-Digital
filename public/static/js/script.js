@@ -114,7 +114,7 @@ window.showCategory = function(slug, btn) {
   if (btn) btn.classList.add('active');
 
   // Scroll cat btn into view (horizontal)
-  if (btn) btn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  if (btn) btn.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'center' });
 };
 
 // ─── 9. FORM LOADING STATE ────────────────────

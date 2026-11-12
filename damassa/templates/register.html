@@ -4,17 +4,15 @@
 
 {% block content %}
 <div class="auth-bg">
-  <div class="auth-particles" id="particles"></div>
-
-  <div class="auth-card wide" data-aos="fade-up">
+  <div class="auth-card wide">
     <div class="auth-logo">
       <span class="logo-em">Da</span> Massa
     </div>
     <p class="auth-tagline">Crie sua conta e explore nosso cardápio</p>
 
     <div class="auth-tabs">
-      <button class="auth-tab" onclick="window.location='{{ url_for('login') }}'">🍽️ Entrar</button>
-      <button class="auth-tab active">✨ Cadastrar</button>
+      <button class="auth-tab" onclick="window.location='{{ url_for('login') }}'">Entrar</button>
+      <button class="auth-tab active">Cadastrar</button>
     </div>
 
     <form method="POST" action="{{ url_for('register') }}" class="auth-form" id="registerForm">
@@ -47,7 +45,7 @@
         <div class="input-wrap">
           <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           <input type="password" name="password" id="regPassword" class="form-input" placeholder="••••••••" required minlength="6">
-          <button type="button" class="toggle-pw" onclick="togglePassword(this)">
+          <button type="button" class="toggle-pw" aria-label="Mostrar senha" onclick="togglePassword(this)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
         </div>

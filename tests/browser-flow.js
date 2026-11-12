@@ -10,6 +10,13 @@ async (page) => {
   for (const width of sizes) {
     await page.setViewportSize({ width, height: 900 });
     check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `Overflow em ${width}px`);
+    const cards = await page.locator('.cat-section.active .menu-card').evaluateAll(elements => elements.map(element => {
+      const rect = element.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, visible: getComputedStyle(element).opacity === '1' };
+    }));
+    check(cards.every(card => card.visible), `Pratos ocultos em ${width}px`);
+    check(width >= 700 ? cards[0].y === cards[1].y : cards[0].y < cards[1].y, `Grade incorreta em ${width}px`);
+    check(await page.locator('.cat-section.active .btn-add-cart').first().evaluate(element => element.getBoundingClientRect().height >= 44), 'Botão de adicionar pequeno para toque');
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Gnocchi (Nhoque)', exact: true }).click();
@@ -17,7 +24,7 @@ async (page) => {
   check(await picker.locator('option:disabled').count() > 0, 'Premium sem preço deve ficar indisponível');
   await picker.selectOption('Pomodoro');
   await page.locator('.btn-add-cart[data-id="5"]').click();
-  await page.getByRole('button', { name: '+', exact: true }).click();
+  await page.getByRole('button', { name: 'Aumentar quantidade', exact: true }).click();
   check((await page.locator('#cartTotal').textContent()).includes('80,00'), 'Total do carrinho incorreto');
   await page.getByRole('button', { name: 'Finalizar Pedido', exact: true }).click();
   await page.waitForURL('**/login');

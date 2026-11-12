@@ -64,7 +64,7 @@
   </div>
   <div class="navbar-right">
     <span class="nav-badge {% if session.role == 'chef' %}badge-chef{% else %}badge-user{% endif %}">
-      {% if session.role == 'chef' %}👨‍🍳 Chef{% else %}{{ session.get('username', 'Cliente') }}{% endif %}
+      {% if session.role == 'chef' %}Chef{% else %}{{ session.get('username', 'Cliente') }}{% endif %}
     </span>
     <a href="{{ url_for('logout') }}" class="btn-logout">Sair</a>
   </div>
@@ -75,9 +75,11 @@
     <a href="{{ url_for('register') }}" class="btn-cadastro">Cadastrar</a>
   </div>
   {% endif %}
-  <button class="nav-burger" id="navBurger" aria-label="Menu">
+  {% if session.get('user_id') %}
+  <button class="nav-burger" id="navBurger" aria-label="Menu" aria-expanded="false">
     <span></span><span></span><span></span>
   </button>
+  {% endif %}
 </nav>
 
 <!-- Flash messages -->
@@ -87,7 +89,7 @@
     {% for cat, msg in messages %}
     <div class="flash flash-{{ cat }}" data-flash>
       <span>{{ msg }}</span>
-      <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+      <button class="flash-close" aria-label="Fechar aviso" onclick="this.parentElement.remove()">×</button>
     </div>
     {% endfor %}
   </div>

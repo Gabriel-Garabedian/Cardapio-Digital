@@ -1,106 +1,48 @@
-# 🍝 Da Massa — Cardápio Digital
+# Da Massa — Cardápio Digital
 
-Sistema completo de cardápio digital com backend Flask + SQLite para restaurantes de massa.
+Flask, HTML/CSS/JavaScript e PostgreSQL em produção. SQLite apenas no desenvolvimento.
 
-## Funcionalidades
+## Uso
 
-### Cliente
-- Cadastro e login próprio
-- Visualização do cardápio com fotos e descrições
-- Montagem de pedidos com molhos personalizados
-- Histórico de pedidos
-- Perfil editável: nome, telefone, endereço, cidade
-- Troca de senha
+- Cardápio público em `/menu`; cadastro/login ao finalizar o pedido.
+- Pedidos e perfil do cliente; painel do chef em `/chef`.
+- Pratos, fotos, categorias, preços finais dos molhos, WhatsApp e status de pedidos são editáveis pelo chef.
+- Molhos premium sem preço definido ficam indisponíveis. O valor configurado é o preço final do prato, não um adicional.
+- O pedido é salvo e o cliente é levado ao WhatsApp com a mensagem pronta. O cliente precisa enviá-la no WhatsApp.
+- Fotos e configurações ficam no banco; fotos de até 4 MB (incluindo os campos do formulário).
 
-### Chef
-- Painel de controle com estatísticas
-- CRUD completo: pratos e categorias
-- Ativar/desativar itens do cardápio
-- Gerenciar pedidos: status (novo, em preparo, enviado, entregue)
-- Upload de fotos dos pratos
-- Integração com WhatsApp para recebimento de pedidos
-- Alterações refletem imediatamente para os clientes
-- API pública `/api/menu`
+## Desenvolvimento (a partir da raiz)
 
-## Instalação
-
-### Desenvolvimento Local
-
-```bash
-pip install -r requirements.txt
-cp .env.example .env
-# Edite .env e defina SECRET_KEY:
-# SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
-python app.py
+```powershell
+python -m venv .venv
+.venv/Scripts/pip install -r requirements.txt
+$env:SECRET_KEY = 'defina-uma-chave-local'
+$env:CHEF_PASSWORD = 'defina-sua-senha-inicial'
+.venv/Scripts/python -m flask --app wsgi run
 ```
 
-Acesse: http://localhost:5000
+O chef inicial usa `chef@damassa.com`. A senha é lida de `CHEF_PASSWORD` somente ao criar a conta; depois pode ser trocada em **Perfil e senha**. Não existe senha administrativa padrão no código.
 
-### Produção
+## Vercel
 
-```bash
-pip install -r requirements.txt
-cp .env.example .env
-# Edite .env com sua SECRET_KEY e demais configurações
-waitress-serve --port=$PORT wsgi:app
+Projeto `damassa-cardapio`, equipe `voryn`, framework Flask, entrada `wsgi.py`, região `gru1`.
+
+- `DATABASE_URL`: PostgreSQL com pool de conexões (Neon conectado pelo Marketplace).
+- `SECRET_KEY`: chave estável e secreta para sessões/CSRF.
+- `CHEF_PASSWORD`: senha inicial secreta; não altera uma conta já existente.
+- `PROD=1`: cookies seguros HTTPS.
+- `CHEF_WHATSAPP`: opcional; a alteração feita pelo painel tem precedência.
+- Arquivos estáticos em `public/static`, servidos pelo CDN.
+
+SQLite e uploads no disco da função não são usados em produção. Não copie bancos locais ou segredos para o Git. A criação de tabelas/seed é serializada no PostgreSQL para evitar duplicação durante cold starts. Não há garantia de disponibilidade absoluta; os limites dos planos e os serviços externos continuam aplicáveis.
+
+## Verificação
+
+```powershell
+.venv/Scripts/python -m unittest discover -s tests -p test_app.py -v
+# Integração real em schemas descartáveis; requer .env.local do projeto:
+$env:RUN_POSTGRES_TESTS = '1'
+.venv/Scripts/python -m unittest discover -s tests -p test_postgres.py -v
 ```
 
-## Credenciais padrão
-
-| Perfil | E-mail | Senha |
-|--------|--------|-------|
-| Chef (fixo) | chef@damassa.com | admin123 |
-| Cliente | cadastre-se na tela de registro | — |
-
-> **Importante:** Troque a senha do chef após o primeiro login!
-
-## Estrutura
-
-```
-├── wsgi.py                 # Entrypoint para produção
-├── damassa/
-│   ├── app.py              # Backend Flask + SQLite
-│   ├── requirements.txt
-│   ├── .env.example        # Template de configurações
-│   ├── templates/
-│   │   ├── base.html       # Layout base + navbar
-│   │   ├── login.html      # Tela de login
-│   │   ├── register.html   # Cadastro de cliente
-│   │   ├── menu.html       # Cardápio do cliente
-│   │   ├── my_orders.html  # Pedidos do cliente
-│   │   ├── profile.html    # Perfil do cliente
-│   │   └── chef.html       # Painel do chef
-│   └── static/
-│       ├── css/style.css   # Estilos
-│       ├── js/script.js    # Interatividade
-│       └── uploads/        # Fotos dos pratos
-└── .gitignore
-```
-
-## Deploy
-
-### Render (gratuito)
-
-1. Crie um **Web Service** conectando este repositório
-2. Build Command: `pip install -r requirements.txt`
-3. Start Command: `waitress-serve --port=$PORT wsgi:app`
-4. Adicione as variáveis de ambiente no painel:
-   - `SECRET_KEY` — gere com `python -c "import secrets; print(secrets.token_hex(32))"`
-   - `CHEF_WHATSAPP` — número com DDI
-   - `PROD=1`
-
-### Hospedagem caseira (VPS/Windows)
-
-```bash
-setx SECRET_KEY "sua-chave-secreta-aqui"
-setx PROD 1
-waitress-serve --port=5000 wsgi:app
-```
-
-## Segurança
-
-- `SECRET_KEY` nunca deve ser commitada (use variável de ambiente ou `.env`)
-- `.env` e `*.db` estão no `.gitignore`
-- Rate limiting contra brute force no login (5 tentativas/minuto)
-- Cookies de sessão com HttpOnly e SameSite=Lax
-- Upload de imagens limitado a 8MB (apenas PNG/JPG/GIF/WEBP)
+`tests/browser-flow.js` pode ser executado por Playwright CLI (`run-code --filename tests/browser-flow.js`) após abrir `/menu`. Ele cria cliente/pedido sintéticos e intercepta o WhatsApp; em produção, remova apenas esses registros identificados após o teste.

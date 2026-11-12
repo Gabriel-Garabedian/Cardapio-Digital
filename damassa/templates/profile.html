@@ -22,11 +22,12 @@
     <div>
       <div class="avatar-name">{{ user.full_name or user.username }}</div>
       <div class="avatar-email">{{ user.email }}</div>
-      <div class="avatar-since">Cliente desde {{ user.created_at.strftime('%d/%m/%Y') if user.created_at else 'N/A' }}</div>
+      <div class="avatar-since">Conta criada em {{ (user.created_at|order_date)[:10] }}</div>
     </div>
   </div>
 
   <form method="POST" action="{{ url_for('profile') }}" id="profileForm" class="profile-form" data-aos="fade-up">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
     <div class="form-section">
       <h3 class="form-section-title">Dados Pessoais</h3>

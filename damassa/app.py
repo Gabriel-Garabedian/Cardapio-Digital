@@ -1,8 +1,11 @@
 from flask import (Flask, render_template, request, redirect,
-                   url_for, session, jsonify, flash, send_from_directory)
+                   url_for, session, jsonify, flash, send_from_directory, send_file)
+from flask_wtf.csrf import CSRFProtect, CSRFError
 from werkzeug.security import generate_password_hash, check_password_hash
-from werkzeug.utils import secure_filename
-import os, functools, uuid, urllib.parse, unicodedata, re, secrets, time
+import os, functools, uuid, urllib.parse, unicodedata, re, secrets, time, sqlite3, math, io
+from contextlib import contextmanager
+from datetime import datetime
+from PIL import Image
 from dotenv import load_dotenv
 
 # ─────────────────────────────────────────
@@ -11,15 +14,24 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 USE_PG = bool(os.environ.get("DATABASE_URL"))
+if os.environ.get('VERCEL') and not USE_PG:
+    raise RuntimeError('DATABASE_URL obrigatória na Vercel para preservar os dados')
+if USE_PG:
+    import psycopg2
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError, psycopg2.IntegrityError)
+else:
+    INTEGRITY_ERRORS = (sqlite3.IntegrityError,)
 
 def _get_upload_folder():
     return os.environ.get("UPLOAD_FOLDER", os.path.join(os.path.dirname(__file__), "static", "uploads"))
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='../public/static', static_url_path='/static')
 
 # ─── Segurança de sessão ───
 app.secret_key = os.environ.get("SECRET_KEY")
 if not app.secret_key:
+    if os.environ.get('VERCEL') or os.environ.get('PROD'):
+        raise RuntimeError('SECRET_KEY obrigatória em produção')
     import warnings
     warnings.warn(
         "SECRET_KEY não configurada! Gerando uma chave temporária. "
@@ -31,40 +43,54 @@ app.config.update({
     'SESSION_COOKIE_HTTPONLY': True,
     'SESSION_COOKIE_SAMESITE': 'Lax',
     'PERMANENT_SESSION_LIFETIME': 3600 * 12,
-    'MAX_CONTENT_LENGTH': 8 * 1024 * 1024,
+    'MAX_CONTENT_LENGTH': 4 * 1024 * 1024,
 })
-if os.environ.get("PROD") or os.environ.get("DYNO"):
+if os.environ.get("PROD") or os.environ.get("DYNO") or os.environ.get('VERCEL'):
     app.config['SESSION_COOKIE_SECURE'] = True
+CSRFProtect(app)
+
+@app.errorhandler(CSRFError)
+def csrf_error(error):
+    if request.is_json:
+        return jsonify(ok=False, msg='Sessão expirada. Atualize a página.'), 400
+    return 'Sessão expirada. Atualize a página e tente novamente.', 400
+
+@app.template_filter('order_date')
+def order_date(value):
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    return value.strftime('%d/%m/%Y %H:%M') if value else 'N/A'
 
 UPLOAD_FOLDER = _get_upload_folder()
 ALLOWED_EXT   = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 # ─── WhatsApp do chef ───
 CHEF_WHATSAPP_DEFAULT = os.environ.get("CHEF_WHATSAPP", "5581989073030")
-_chef_whatsapp = CHEF_WHATSAPP_DEFAULT
 
 def get_chef_whatsapp():
-    return _chef_whatsapp
+    with get_db() as db:
+        row = db.execute("SELECT value FROM settings WHERE key='chef_whatsapp'").fetchone()
+    return row['value'] if row else CHEF_WHATSAPP_DEFAULT
 
 def set_chef_whatsapp(value):
-    global _chef_whatsapp
-    _chef_whatsapp = value
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    with get_db() as db:
+        db.execute("INSERT INTO settings (key,value) VALUES ('chef_whatsapp',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (value,))
+        db.commit()
 
 # ─────────────────────────────────────────
-#  RATE LIMITING SIMPLE (memória)
+#  RATE LIMITING PERSISTENTE
 # ─────────────────────────────────────────
-_rate_limits: dict[str, list[float]] = {}
-
 def _check_rate_limit(key: str, max_requests: int, window_seconds: int) -> bool:
     now = time.time()
-    _rate_limits.setdefault(key, [])
-    _rate_limits[key] = [t for t in _rate_limits[key] if now - t < window_seconds]
-    if len(_rate_limits[key]) >= max_requests:
-        return False
-    _rate_limits[key].append(now)
-    return True
+    with get_db() as db:
+        row = db.execute('''INSERT INTO rate_limits (rate_key, request_count, expires_at)
+            VALUES (?, 1, ?) ON CONFLICT(rate_key) DO UPDATE SET
+            request_count=CASE WHEN rate_limits.expires_at<=? THEN 1 ELSE rate_limits.request_count+1 END,
+            expires_at=CASE WHEN rate_limits.expires_at<=? THEN excluded.expires_at ELSE rate_limits.expires_at END
+            RETURNING request_count''', (key, now + window_seconds, now, now)).fetchone()
+        db.execute('DELETE FROM rate_limits WHERE expires_at<?', (now - 3600,))
+        db.commit()
+    return row['request_count'] <= max_requests
 
 # ─────────────────────────────────────────
 #  CAMADA DE BANCO (SQLite ou PostgreSQL)
@@ -80,26 +106,12 @@ class _PgCursor:
 
     def execute(self, sql, params=None):
         sql = sql.replace('?', '%s')
-        # Para INSERT, adiciona RETURNING id se não tiver
-        if sql.strip().upper().startswith('INSERT') and 'RETURNING' not in sql.upper():
-            sql = sql.rstrip(';') + ' RETURNING id'
         self._cur.execute(sql, params or ())
         # Captura lastrowid para INSERT com RETURNING
-        if sql.strip().upper().startswith('INSERT') and 'RETURNING' in sql.upper():
+        if sql.strip().upper().startswith('INSERT') and 'RETURNING ID' in sql.upper():
             row = self._cur.fetchone()
             if row:
                 self.lastrowid = row['id']
-        return self
-
-    def executescript(self, sql):
-        # PostgreSQL não permite executar múltiplos statements com execute()
-        # Separamos e executamos um a um
-        statements = [s.strip() for s in sql.split(';') if s.strip()]
-        for stmt in statements:
-            try:
-                self._cur.execute(stmt.replace('?', '%s'))
-            except Exception:
-                pass  # IGNORAR erros esperados (tabela já existe, etc.)
         return self
 
     def fetchone(self):
@@ -123,36 +135,47 @@ class _PgCursor:
         self.close()
 
 
+@contextmanager
 def get_db():
     if USE_PG:
-        import psycopg2
-        return _PgCursor(psycopg2.connect(os.environ["DATABASE_URL"]))
+        with _PgCursor(psycopg2.connect(os.environ["DATABASE_URL"], connect_timeout=10)) as db:
+            yield db
     else:
-        import sqlite3
-        DB_PATH = os.path.join(os.path.dirname(__file__), "damassa.db")
+        DB_PATH = os.environ.get('DATABASE_PATH', os.path.join(os.path.dirname(__file__), "damassa.db"))
         conn = sqlite3.connect(DB_PATH, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
-        return conn
+        conn.execute('PRAGMA foreign_keys=ON')
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXT
 
-def save_image(field='image'):
+def save_image(db, field='image'):
     f = request.files.get(field)
-    if f and f.filename and allowed_file(f.filename):
+    if f and f.filename:
+        if not allowed_file(f.filename):
+            raise ValueError('Formato de imagem inválido')
+        content = f.read()
+        with Image.open(io.BytesIO(content)) as image:
+            image.verify()
+            mime = Image.MIME.get(image.format)
+        if mime not in {'image/png', 'image/jpeg', 'image/gif', 'image/webp'}:
+            raise ValueError('Formato de imagem inválido')
         ext  = f.filename.rsplit('.', 1)[1].lower()
         name = f"{uuid.uuid4().hex}.{ext}"
-        f.save(os.path.join(UPLOAD_FOLDER, name))
+        db.execute('INSERT INTO uploads (filename,content,mime) VALUES (?,?,?)', (name, content, mime))
         return name
     return None
 
-def delete_image(filename):
+def delete_image(db, filename):
     if filename:
-        path = os.path.join(UPLOAD_FOLDER, filename)
-        if os.path.exists(path):
-            os.remove(path)
+        db.execute('DELETE FROM uploads WHERE filename=?', (filename,))
 
 def slugify(text):
     text = unicodedata.normalize('NFKD', text.lower()).encode('ascii', 'ignore').decode('utf-8')
@@ -165,34 +188,42 @@ def slugify(text):
 def _create_tables():
     """Cria todas as tabelas do banco. Usa conexão própria."""
     with get_db() as db:
+        db.execute('CREATE TABLE IF NOT EXISTS rate_limits (rate_key TEXT PRIMARY KEY, request_count INTEGER NOT NULL, expires_at DOUBLE PRECISION NOT NULL)')
+        db.execute('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+        binary_type = 'BYTEA' if USE_PG else 'BLOB'
+        db.execute(f'CREATE TABLE IF NOT EXISTS uploads (filename TEXT PRIMARY KEY, content {binary_type} NOT NULL, mime TEXT NOT NULL)')
         # users
-        db.execute("""CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY, username TEXT UNIQUE NOT NULL,
+        db.execute(f"""CREATE TABLE IF NOT EXISTS users (
+            id {'SERIAL' if USE_PG else 'INTEGER'} PRIMARY KEY, username TEXT UNIQUE NOT NULL,
             email TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'cliente', full_name TEXT DEFAULT '',
             phone TEXT DEFAULT '', address TEXT DEFAULT '', number TEXT DEFAULT '',
             city TEXT DEFAULT '', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
-        db.execute("""CREATE TABLE IF NOT EXISTS categories (
-            id SERIAL PRIMARY KEY, slug TEXT UNIQUE NOT NULL,
+        db.execute(f"""CREATE TABLE IF NOT EXISTS categories (
+            id {'SERIAL' if USE_PG else 'INTEGER'} PRIMARY KEY, slug TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL, size TEXT DEFAULT '500g', sort INTEGER DEFAULT 0)""")
-        db.execute("""CREATE TABLE IF NOT EXISTS items (
-            id SERIAL PRIMARY KEY, category_id INTEGER NOT NULL,
+        db.execute(f"""CREATE TABLE IF NOT EXISTS items (
+            id {'SERIAL' if USE_PG else 'INTEGER'} PRIMARY KEY, category_id INTEGER NOT NULL,
             name TEXT NOT NULL, description TEXT DEFAULT '',
             price REAL NOT NULL, active INTEGER DEFAULT 1,
             sort INTEGER DEFAULT 0, image TEXT DEFAULT NULL,
             FOREIGN KEY (category_id) REFERENCES categories(id))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS sauces (
-            id SERIAL PRIMARY KEY, category_id INTEGER NOT NULL,
-            name TEXT NOT NULL, price_type TEXT DEFAULT 'simples',
+        db.execute(f"""CREATE TABLE IF NOT EXISTS sauces (
+            id {'SERIAL' if USE_PG else 'INTEGER'} PRIMARY KEY, category_id INTEGER NOT NULL,
+            name TEXT NOT NULL, price_type TEXT DEFAULT 'simples', final_price REAL DEFAULT NULL,
             FOREIGN KEY (category_id) REFERENCES categories(id))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS orders (
-            id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL, total REAL NOT NULL,
+        if USE_PG:
+            db.execute('ALTER TABLE sauces ADD COLUMN IF NOT EXISTS final_price REAL DEFAULT NULL')
+        elif 'final_price' not in {row['name'] for row in db.execute('PRAGMA table_info(sauces)').fetchall()}:
+            db.execute('ALTER TABLE sauces ADD COLUMN final_price REAL DEFAULT NULL')
+        db.execute(f"""CREATE TABLE IF NOT EXISTS orders (
+            id {'SERIAL' if USE_PG else 'INTEGER'} PRIMARY KEY, user_id INTEGER NOT NULL, total REAL NOT NULL,
             address TEXT DEFAULT '', number TEXT DEFAULT '', city TEXT DEFAULT '',
             note TEXT DEFAULT '', status TEXT DEFAULT 'novo',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id))""")
-        db.execute("""CREATE TABLE IF NOT EXISTS order_items (
-            id SERIAL PRIMARY KEY, order_id INTEGER NOT NULL, item_id INTEGER NOT NULL,
+        db.execute(f"""CREATE TABLE IF NOT EXISTS order_items (
+            id {'SERIAL' if USE_PG else 'INTEGER'} PRIMARY KEY, order_id INTEGER NOT NULL, item_id INTEGER NOT NULL,
             item_name TEXT NOT NULL, quantity INTEGER NOT NULL DEFAULT 1,
             unit_price REAL NOT NULL, sauce TEXT DEFAULT '',
             FOREIGN KEY (order_id) REFERENCES orders(id))""")
@@ -202,9 +233,9 @@ def _seed_data():
     """Insere dados iniciais (chef, categorias, pratos). Usa conexão PRÓPRIA."""
     with get_db() as db:
         # Seed chef
-        if not db.execute("SELECT id FROM users WHERE email='chef@damassa.com'").fetchone():
-            db.execute("INSERT INTO users (username,email,password,role,full_name) VALUES (%s,%s,%s,'chef','Josue Matheus')",
-                       ('chef_josue','chef@damassa.com', generate_password_hash('oDEtfwa7ocHmP5lr4Mr-Hw')))
+        if os.environ.get('CHEF_PASSWORD') and not db.execute("SELECT id FROM users WHERE email='chef@damassa.com'").fetchone():
+            db.execute("INSERT INTO users (username,email,password,role,full_name) VALUES (?,?,?,'chef','Josue Matheus')",
+                       ('chef_josue','chef@damassa.com', generate_password_hash(os.environ['CHEF_PASSWORD'])))
             db.commit()
 
         # Seed categories
@@ -213,12 +244,12 @@ def _seed_data():
             ('gnocchi','Gnocchi (Nhoque)','500g',2),
             ('fettuccine','Fettuccine','500g',3),
             ('ravioli','Ravioli','500g',4)]:
-            if not db.execute("SELECT id FROM categories WHERE slug=%s",(slug,)).fetchone():
-                db.execute("INSERT INTO categories (slug,name,size,sort) VALUES (%s,%s,%s,%s)",(slug,name,size,sort))
+            if not db.execute("SELECT id FROM categories WHERE slug=?",(slug,)).fetchone():
+                db.execute("INSERT INTO categories (slug,name,size,sort) VALUES (?,?,?,?)",(slug,name,size,sort))
         db.commit()
 
         def cid(slug):
-            r = db.execute("SELECT id FROM categories WHERE slug=%s",(slug,)).fetchone()
+            r = db.execute("SELECT id FROM categories WHERE slug=?",(slug,)).fetchone()
             return r['id'] if r else None
 
         # Seed items only if none exist
@@ -242,7 +273,7 @@ def _seed_data():
             for i, (s, n, d, p) in enumerate(items):
                 c = cid(s)
                 if c:
-                    db.execute("INSERT INTO items (category_id,name,description,price,sort) VALUES (%s,%s,%s,%s,%s)",(c,n,d,p,i))
+                    db.execute("INSERT INTO items (category_id,name,description,price,sort) VALUES (?,?,?,?,?)",(c,n,d,p,i))
             db.commit()
 
         # Seed sauces only if none exist
@@ -251,14 +282,20 @@ def _seed_data():
                 c = cid(cat_slug)
                 if c:
                     for n in ['Pomodoro','Bechamel']:
-                        db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (%s,%s,'simples')",(c,n))
+                        db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (?,?,'simples')",(c,n))
                     for n in ['Bolonhesa','Quatro Queijos','Costela na Cerveja','Ragù de Ossobuco','Filé Mignon com Gorgonzola','Camarão com Espinafre']:
-                        db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (%s,%s,'premium')",(c,n))
+                        db.execute("INSERT INTO sauces (category_id,name,price_type) VALUES (?,?,'premium')",(c,n))
             db.commit()
 
 def init_db():
-    _create_tables()
-    _seed_data()
+    if USE_PG:
+        with get_db() as db:
+            db.execute('SELECT pg_advisory_xact_lock(74201931)')
+            _create_tables()
+            _seed_data()
+    else:
+        _create_tables()
+        _seed_data()
 
 # ─────────────────────────────────────────
 #  DECORATORS
@@ -267,6 +304,8 @@ def login_required(f):
     @functools.wraps(f)
     def w(*a,**kw):
         if 'user_id' not in session:
+            if request.is_json:
+                return jsonify(ok=False, msg='Faça login para continuar.'), 401
             flash('Faça login para continuar.','info')
             return redirect(url_for('login'))
         return f(*a,**kw)
@@ -292,7 +331,7 @@ def index():
 def login():
     if request.method == 'POST':
         email = request.form.get('email','').strip().lower()
-        pw    = request.form.get('password','').strip()
+        pw    = request.form.get('password','')
 
         # Rate limiting: 5 tentativas por minuto por IP
         ip = request.remote_addr or 'unknown'
@@ -308,6 +347,7 @@ def login():
         with get_db() as db:
             user = db.execute("SELECT * FROM users WHERE email=?",(email,)).fetchone()
         if user and check_password_hash(user['password'], pw):
+            session.clear()
             session.update({'user_id':user['id'],'role':user['role'],
                             'username':user['username'],'full_name':user['full_name'] or user['username']})
             return redirect(url_for('chef_dashboard') if user['role']=='chef' else url_for('menu'))
@@ -319,7 +359,7 @@ def register():
     if request.method == 'POST':
         u = request.form.get('username','').strip()
         e = request.form.get('email','').strip().lower()
-        p = request.form.get('password','').strip()
+        p = request.form.get('password','')
         f = request.form.get('full_name','').strip()
         if not all([u,e,p]):
             flash('Preencha todos os campos.','danger')
@@ -334,7 +374,7 @@ def register():
                 db.commit()
             flash('Conta criada! Faça login.','success')
             return redirect(url_for('login'))
-        except sqlite3.IntegrityError:
+        except INTEGRITY_ERRORS:
             flash('E-mail ou usuário já cadastrado.','danger')
     return render_template('register.html')
 
@@ -378,8 +418,14 @@ def place_order():
     if not _check_rate_limit(user_rate, max_requests=10, window_seconds=60):
         return jsonify({'ok':False,'msg':'Muitos pedidos. Aguarde.'}), 429
 
-    data    = request.get_json(force=True)
+    data    = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify(ok=False, msg='Pedido inválido'), 400
     cart    = data.get('cart', [])
+    if not isinstance(cart, list) or len(cart) > 100:
+        return jsonify(ok=False, msg='Carrinho inválido'), 400
+    if any(not isinstance(data.get(key, ''), str) for key in ('address', 'number', 'city', 'note')):
+        return jsonify(ok=False, msg='Endereço inválido'), 400
     address = data.get('address','').strip()
     number  = data.get('number','').strip()
     city    = data.get('city','').strip()
@@ -387,25 +433,41 @@ def place_order():
 
     if not cart:
         return jsonify({'ok':False,'msg':'Carrinho vazio'}), 400
-    if not address or not number:
-        return jsonify({'ok':False,'msg':'Endereço e número são obrigatórios'}), 400
+    if not address or not number or not city:
+        return jsonify({'ok':False,'msg':'Endereço, número e cidade são obrigatórios'}), 400
 
     with get_db() as db:
         user  = db.execute("SELECT * FROM users WHERE id=?",(session['user_id'],)).fetchone()
         total = 0.0
         lines = []
         for entry in cart:
+            if (not isinstance(entry, dict) or type(entry.get('id')) is not int
+                    or type(entry.get('qty', 1)) is not int or not 1 <= entry.get('qty', 1) <= 99
+                    or not isinstance(entry.get('sauce', ''), str)):
+                return jsonify(ok=False, msg='Item ou quantidade inválidos'), 400
             item = db.execute("SELECT * FROM items WHERE id=? AND active=1",(entry['id'],)).fetchone()
-            if not item: continue
-            qty  = max(1, int(entry.get('qty',1)))
+            if not item:
+                return jsonify(ok=False, msg='Um prato não está mais disponível. Atualize o cardápio.'), 400
+            qty  = entry.get('qty', 1)
             sauce = entry.get('sauce','')
-            total += item['price'] * qty
-            lines.append({'id':item['id'],'name':item['name'],'qty':qty,'price':item['price'],'sauce':sauce})
+            options = db.execute('SELECT * FROM sauces WHERE category_id=?', (item['category_id'],)).fetchall()
+            chosen = next((row for row in options if row['name'] == sauce), None)
+            if options and not chosen:
+                return jsonify(ok=False, msg='Molho inválido'), 400
+            if sauce and not chosen:
+                return jsonify(ok=False, msg='Molho inválido'), 400
+            if chosen and chosen['price_type'] == 'premium' and chosen['final_price'] is None:
+                return jsonify(ok=False, msg='O chef ainda não definiu o preço deste molho'), 400
+            price = chosen['final_price'] if chosen and chosen['final_price'] is not None else item['price']
+            total += round(price * qty, 2)
+            lines.append({'id':item['id'],'name':item['name'],'qty':qty,'price':price,'sauce':sauce})
+
+        total = round(total, 2)
 
         if not lines:
             return jsonify({'ok':False,'msg':'Nenhum item válido'}), 400
 
-        cur      = db.execute("INSERT INTO orders (user_id,total,address,number,city,note) VALUES (?,?,?,?,?,?)",
+        cur      = db.execute("INSERT INTO orders (user_id,total,address,number,city,note) VALUES (?,?,?,?,?,?)" + (' RETURNING id' if USE_PG else ''),
                               (session['user_id'],total,address,number,city,note))
         order_id = cur.lastrowid
         for l in lines:
@@ -445,8 +507,6 @@ def my_orders():
 @app.route('/profile', methods=['GET','POST'])
 @login_required
 def profile():
-    if session['role'] == 'chef':
-        return redirect(url_for('chef_dashboard'))
     if request.method == 'POST':
         fn = request.form.get('full_name','').strip()
         un = request.form.get('username','').strip()
@@ -454,7 +514,10 @@ def profile():
         ad = request.form.get('address','').strip()
         nm = request.form.get('number','').strip()
         ct = request.form.get('city','').strip()
-        np = request.form.get('new_password','').strip()
+        np = request.form.get('new_password','')
+        if not un:
+            flash('Informe o nome de usuário.', 'danger')
+            return redirect(url_for('profile'))
         try:
             with get_db() as db:
                 if np:
@@ -469,7 +532,7 @@ def profile():
                 db.commit()
             session['username'] = un; session['full_name'] = fn
             flash('Perfil atualizado!','success')
-        except sqlite3.IntegrityError:
+        except INTEGRITY_ERRORS:
             flash('Usuário já existe.','danger')
         return redirect(url_for('profile'))
     with get_db() as db:
@@ -485,6 +548,7 @@ def profile():
 def chef_dashboard():
     with get_db() as db:
         cats        = db.execute("SELECT * FROM categories ORDER BY sort").fetchall()
+        sauces      = db.execute('SELECT s.*,c.name category_name FROM sauces s JOIN categories c ON c.id=s.category_id ORDER BY c.sort,s.id').fetchall()
         iraw        = db.execute("SELECT i.*,c.slug cat_slug FROM items i JOIN categories c ON i.category_id=c.id ORDER BY c.sort,i.sort").fetchall()
         total_items = db.execute("SELECT COUNT(*) c FROM items WHERE active=1").fetchone()['c']
         total_users = db.execute("SELECT COUNT(*) c FROM users WHERE role='cliente'").fetchone()['c']
@@ -494,9 +558,28 @@ def chef_dashboard():
     items = {c['slug']:[r for r in iraw if r['cat_slug']==c['slug']] for c in cats}
     og    = {o['id']:{'order':o,'items':[i for i in all_oi if i['order_id']==o['id']]} for o in recent_ords}
     return render_template('chef.html', categories=cats, items=items,
+                           sauces=sauces,
                            total_items=total_items, total_users=total_users,
                            new_orders=new_orders, orders_grouped=og,
                            chef_whatsapp=get_chef_whatsapp())
+
+@app.route('/chef/sauce/<int:sid>/price', methods=['POST'])
+@login_required
+@chef_required
+def chef_sauce_price(sid):
+    value = request.form.get('price', '').strip()
+    try:
+        price = float(value) if value else None
+        if price is not None and (not math.isfinite(price) or not 0 < price <= 100000 or round(price, 2) != price):
+            raise ValueError('Preço inválido')
+    except ValueError:
+        flash('Informe um preço positivo, com até duas casas decimais.', 'danger')
+        return redirect(url_for('chef_dashboard'))
+    with get_db() as db:
+        db.execute('UPDATE sauces SET final_price=? WHERE id=?', (price, sid))
+        db.commit()
+    flash('Preço do molho atualizado.', 'success')
+    return redirect(url_for('chef_dashboard'))
 
 @app.route('/chef/whatsapp', methods=['POST'])
 @login_required
@@ -515,6 +598,8 @@ def chef_update_whatsapp():
 @chef_required
 def chef_order_status(oid):
     s = request.form.get('status','novo')
+    if s not in {'novo', 'em_preparo', 'enviado', 'entregue'}:
+        return 'Status inválido', 400
     with get_db() as db:
         db.execute("UPDATE orders SET status=? WHERE id=?",(s,oid))
         db.commit()
@@ -529,16 +614,21 @@ def chef_add_item():
     desc     = request.form.get('description','').strip()
     try:
         price = float(request.form.get('price','0'))
-        image = save_image('image')
+        if not name or not math.isfinite(price) or not 0 < price <= 100000:
+            raise ValueError('Informe nome e preço válido')
         with get_db() as db:
             cat = db.execute("SELECT id FROM categories WHERE slug=?",(cat_slug,)).fetchone()
+            if not cat:
+                raise ValueError('Categoria inválida')
+            image = save_image(db)
             ms  = db.execute("SELECT MAX(sort) m FROM items WHERE category_id=?",(cat['id'],)).fetchone()['m'] or 0
             db.execute("INSERT INTO items (category_id,name,description,price,sort,image) VALUES (?,?,?,?,?,?)",
                        (cat['id'],name,desc,price,ms+1,image))
             db.commit()
         flash(f'Prato "{name}" adicionado!','success')
     except Exception as ex:
-        flash(f'Erro: {ex}','danger')
+        app.logger.exception('Falha ao salvar prato')
+        flash('Não foi possível salvar. Confira os dados e a imagem.','danger')
     return redirect(url_for('chef_dashboard'))
 
 @app.route('/chef/item/edit/<int:iid>', methods=['POST'])
@@ -551,12 +641,16 @@ def chef_edit_item(iid):
     active   = 1 if request.form.get('active')=='1' else 0
     try:
         price = float(request.form.get('price','0'))
+        if not name or not math.isfinite(price) or not 0 < price <= 100000:
+            raise ValueError('Informe nome e preço válido')
         with get_db() as db:
             cat     = db.execute("SELECT id FROM categories WHERE slug=?",(cat_slug,)).fetchone()
             old_img = db.execute("SELECT image FROM items WHERE id=?",(iid,)).fetchone()['image']
-            new_img = save_image('image')
+            if not cat:
+                raise ValueError('Categoria inválida')
+            new_img = save_image(db)
             if new_img:
-                delete_image(old_img)
+                delete_image(db, old_img)
                 db.execute("UPDATE items SET category_id=?,name=?,description=?,price=?,active=?,image=? WHERE id=?",
                            (cat['id'],name,desc,price,active,new_img,iid))
             else:
@@ -565,7 +659,8 @@ def chef_edit_item(iid):
             db.commit()
         flash(f'"{name}" atualizado!','success')
     except Exception as ex:
-        flash(f'Erro: {ex}','danger')
+        app.logger.exception('Falha ao salvar prato')
+        flash('Não foi possível salvar. Confira os dados e a imagem.','danger')
     return redirect(url_for('chef_dashboard'))
 
 @app.route('/chef/item/delete/<int:iid>', methods=['POST'])
@@ -575,7 +670,7 @@ def chef_delete_item(iid):
     with get_db() as db:
         item = db.execute("SELECT name,image FROM items WHERE id=?",(iid,)).fetchone()
         if item:
-            delete_image(item['image'])
+            delete_image(db, item['image'])
             db.execute("DELETE FROM items WHERE id=?",(iid,))
             db.commit()
             flash(f'"{item["name"]}" removido.','success')
@@ -612,7 +707,7 @@ def chef_add_category():
                        (slug, name, size, max_sort + 1))
             db.commit()
         flash(f'Categoria "{name}" adicionada!','success')
-    except sqlite3.IntegrityError:
+    except INTEGRITY_ERRORS:
         flash('Categoria ja existe.','danger')
     return redirect(url_for('chef_dashboard'))
 
@@ -631,7 +726,7 @@ def chef_edit_category(cid):
             db.execute("UPDATE categories SET slug=?,name=?,size=? WHERE id=?",(slug,name,size,cid))
             db.commit()
         flash(f'Categoria "{name}" atualizada!','success')
-    except sqlite3.IntegrityError:
+    except INTEGRITY_ERRORS:
         flash('Slug da categoria ja existe.','danger')
     return redirect(url_for('chef_dashboard'))
 
@@ -648,6 +743,7 @@ def chef_delete_category(cid):
         if items_count > 0:
             flash(f'Nao foi possivel remover "{cat["name"]}": existem {items_count} prato(s) nesta categoria.','danger')
             return redirect(url_for('chef_dashboard'))
+        db.execute("DELETE FROM sauces WHERE category_id=?",(cid,))
         db.execute("DELETE FROM categories WHERE id=?",(cid,))
         db.commit()
         flash(f'Categoria "{cat["name"]}" removida.','success')
@@ -655,6 +751,12 @@ def chef_delete_category(cid):
 
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
+    with get_db() as db:
+        image = db.execute('SELECT content,mime FROM uploads WHERE filename=?', (filename,)).fetchone()
+    if image:
+        response = send_file(io.BytesIO(bytes(image['content'])), mimetype=image['mime'], max_age=86400)
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
     return send_from_directory(UPLOAD_FOLDER, filename)
 
 @app.route('/api/checkout-login', methods=['POST'])
@@ -662,8 +764,13 @@ def api_checkout_login():
     """Login rápido via AJAX no checkout."""
     if session.get('user_id'):
         return jsonify({'ok':True,'logged':True})
-    email = request.get_json(force=True).get('email','').strip().lower()
-    pw    = request.get_json(force=True).get('password','').strip()
+    if not _check_rate_limit(f'login:{request.remote_addr or "unknown"}', 5, 60):
+        return jsonify(ok=False, msg='Muitas tentativas. Aguarde um minuto.'), 429
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('email'), str) or not isinstance(data.get('password'), str):
+        return jsonify(ok=False, msg='Preencha e-mail e senha.'), 400
+    email = data['email'].strip().lower()
+    pw = data['password']
     if not email or not pw:
         return jsonify({'ok':False,'msg':'Preencha e-mail e senha.'}), 400
     with get_db() as db:

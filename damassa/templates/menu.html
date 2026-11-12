@@ -63,7 +63,7 @@
           {% else %}
             <div class="card-photo-placeholder">🍝</div>
           {% endif %}
-          <div class="card-price-badge">R$ {{ "%.0f"|format(item.price) }}</div>
+          <div class="card-price-badge">R$ {{ "%.2f"|format(item.price)|replace(".", ",") }}</div>
         </div>
 
         <!-- Body -->
@@ -77,8 +77,9 @@
             <select class="sauce-picker" data-item-id="{{ item.id }}">
               <option value="">— Escolher molho —</option>
               {% for s in sauces[cat.slug] %}
-              <option value="{{ s.name }}" data-type="{{ s.price_type }}">
-                {{ s.name }}{% if s.price_type == 'premium' %} (+premium){% endif %}
+              <option value="{{ s.name }}" data-price="{{ s.final_price if s.final_price is not none else item.price }}"
+                      {% if s.price_type == 'premium' and s.final_price is none %}disabled{% endif %}>
+                {{ s.name }} — {% if s.price_type == 'premium' and s.final_price is none %}preço a definir{% else %}R$ {{ '%.2f'|format(s.final_price if s.final_price is not none else item.price)|replace('.', ',') }}{% endif %}
               </option>
               {% endfor %}
             </select>
@@ -112,10 +113,7 @@
         <span class="sauce-tag {{ s.price_type }}">{{ s.name }}</span>
         {% endfor %}
       </div>
-      <div class="sauces-prices">
-        <span class="price-badge simple">Simples R$ 40</span>
-        <span class="price-badge premium">Premium R$ 45–50</span>
-      </div>
+      <p class="sauces-prices">O preço final do prato está indicado na escolha do molho.</p>
     </div>
     {% endif %}
   </section>
@@ -230,20 +228,32 @@
 <script>
 // ═══════════ CART STATE ═══════════
 let cart = [];
+function escapeHtml(value) {
+  const element = document.createElement('span');
+  element.textContent = value;
+  return element.innerHTML;
+}
 
 function addToCart(btn) {
   const id       = parseInt(btn.dataset.id);
   const name     = btn.dataset.name;
-  const price    = parseFloat(btn.dataset.price);
+  let price      = parseFloat(btn.dataset.price);
   const hasSauce = btn.dataset.hasSauce === 'true';
 
   let sauce = '';
   if (hasSauce) {
     const picker = document.querySelector(`.sauce-picker[data-item-id="${id}"]`);
-    if (picker) sauce = picker.value || '';
+    if (picker) {
+      sauce = picker.value || '';
+      if (!sauce || picker.selectedOptions[0].disabled) {
+        showToast('Escolha um molho disponível.', 'danger');
+        return;
+      }
+      price = parseFloat(picker.selectedOptions[0].dataset.price);
+    }
   }
 
-  const key = `${id}__${sauce}`;
+  const key = `${id}__${encodeURIComponent(sauce).replace(/'/g, '%27')}`;
   const existing = cart.find(i => i.key === key);
   if (existing) {
     existing.qty++;
@@ -300,8 +310,8 @@ function renderCart() {
     div.dataset.key = item.key;
     div.innerHTML = `
       <div class="ci-info">
-        <div class="ci-name">${item.name}</div>
-        ${item.sauce ? `<div class="ci-sauce">🥣 ${item.sauce}</div>` : ''}
+        <div class="ci-name">${escapeHtml(item.name)}</div>
+        ${item.sauce ? `<div class="ci-sauce">🥣 ${escapeHtml(item.sauce)}</div>` : ''}
         <div class="ci-price">R$ ${(item.price * item.qty).toFixed(2).replace('.',',')}</div>
       </div>
       <div class="ci-qty">
@@ -359,7 +369,7 @@ function openCheckout() {
   const summary = document.getElementById('checkoutSummary');
   summary.innerHTML = cart.map(i =>
     `<div class="ck-item">
-       <span>${i.qty}× ${i.name}${i.sauce ? ` <em>(${i.sauce})</em>` : ''}</span>
+       <span>${i.qty}× ${escapeHtml(i.name)}${i.sauce ? ` <em>(${escapeHtml(i.sauce)})</em>` : ''}</span>
        <span>R$ ${(i.price*i.qty).toFixed(2).replace('.',',')}</span>
      </div>`
   ).join('');
@@ -388,7 +398,7 @@ async function sendOrder() {
   try {
     const res  = await fetch('/order/place', {
       method: 'POST',
-      headers: {'Content-Type':'application/json'},
+      headers: {'Content-Type':'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content},
       body: JSON.stringify({ cart, address, number, city, note })
     });
     const data = await res.json();
@@ -399,7 +409,7 @@ async function sendOrder() {
       cart = [];
       renderCart();
       showToast(`✅ Pedido #${data.order_id} registrado! Abrindo WhatsApp...`, 'success');
-      setTimeout(() => window.open(data.wa_url, '_blank'), 800);
+      window.location.assign(data.wa_url);
     } else {
       showToast(`❌ ${data.msg}`, 'danger');
     }

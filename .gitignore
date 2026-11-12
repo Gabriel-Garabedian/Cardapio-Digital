@@ -33,3 +33,9 @@ damassa/.env
 
 # Production artifacts
 *.log
+.vercel/
+.env.*
+output/
+.playwright-cli/
+.vercel
+.env*

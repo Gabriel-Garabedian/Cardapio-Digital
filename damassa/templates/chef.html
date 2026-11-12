@@ -56,6 +56,7 @@
     {% if new_orders > 0 %}<span class="tab-badge">{{ new_orders }}</span>{% endif %}
   </button>
   <button class="chef-tab-btn" onclick="switchTab('categorias',this)">🏷️ Categorias</button>
+  <button class="chef-tab-btn" onclick="switchTab('molhos',this)">Molhos e preços</button>
 </div>
 
 <!-- TAB: CARDÁPIO -->
@@ -92,16 +93,18 @@
           </div>
           <div class="chef-item-actions">
             <button class="btn-icon-edit" title="Editar"
-              onclick="openEditModal({{ item.id }},'{{ cat.slug }}','{{ item.name|e }}','{{ item.description|e }}',{{ item.price }},{{ item.active }},'{{ url_for('uploaded_file', filename=item.image) if item.image else '' }}')">
+              onclick='openEditModal({{ item.id }},{{ cat.slug|tojson }},{{ item.name|tojson }},{{ item.description|tojson }},{{ item.price }},{{ item.active }},{{ (url_for("uploaded_file", filename=item.image) if item.image else "")|tojson }})'>
               ✏️ Editar
             </button>
             <form method="POST" action="{{ url_for('chef_toggle_item', iid=item.id) }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn-icon-toggle {% if item.active %}active{% endif %}">
                 {{ '👁️ Ativo' if item.active else '🚫 Inativo' }}
               </button>
             </form>
             <form method="POST" action="{{ url_for('chef_delete_item', iid=item.id) }}"
-                  style="display:inline" onsubmit="return confirm('Remover {{ item.name|e }}?')">
+                  style="display:inline" onsubmit='return confirm({{ ("Remover " ~ item.name ~ "?")|tojson }})'>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button type="submit" class="btn-icon-del">🗑️</button>
             </form>
           </div>
@@ -140,7 +143,7 @@
             {% elif o.status == 'entregue' %}✅ Entregue
             {% else %}{{ o.status }}{% endif %}
           </span>
-          <span class="order-date">{{ o.created_at.strftime('%d/%m/%Y %H:%M') if o.created_at else 'N/A' }}</span>
+          <span class="order-date">{{ o.created_at|order_date }}</span>
         </div>
       </div>
 
@@ -161,6 +164,7 @@
         <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
           <span class="order-total">Total: <strong>R$ {{ "%.2f"|format(o.total) }}</strong></span>
           <form method="POST" action="{{ url_for('chef_order_status', oid=o.id) }}" style="display:flex;gap:6px;align-items:center;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <select name="status" class="status-select">
               <option value="novo" {% if o.status=='novo' %}selected{% endif %}>🔔 Novo</option>
               <option value="em_preparo" {% if o.status=='em_preparo' %}selected{% endif %}>👨‍🍳 Em preparo</option>
@@ -183,6 +187,21 @@
 </div>
 
 <!-- TAB: CATEGORIAS -->
+<div id="tab-molhos" class="chef-tab-content">
+  <div class="chef-sections">
+    <p>Defina o preço final do prato com cada molho. Em branco: molho simples usa o preço do prato; premium fica indisponível.</p>
+    {% for sauce in sauces %}
+    <form method="POST" action="{{ url_for('chef_sauce_price', sid=sauce.id) }}" class="chef-section-card">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="sauce-price-{{ sauce.id }}">{{ sauce.category_name }} · {{ sauce.name }} — preço final (R$)</label>
+      <input id="sauce-price-{{ sauce.id }}" name="price" type="number" min="0.01" max="100000" step="0.01" class="form-input"
+             value="{{ '%.2f'|format(sauce.final_price) if sauce.final_price is not none else '' }}" placeholder="Preço não definido">
+      <button type="submit" class="btn-add-small">Salvar preço</button>
+    </form>
+    {% endfor %}
+  </div>
+</div>
+
 <div id="tab-categorias" class="chef-tab-content">
   <div class="chef-sections">
     <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -201,9 +220,10 @@
           <span class="chef-section-count">{{ cat.size }}&nbsp;—&nbsp;slug: "{{ cat.slug }}"</span>
         </div>
         <div style="display:flex;gap:8px;">
-          <button class="btn-add-small" onclick="openCatEditModal({{ cat.id }},'{{ cat.name|e }}','{{ cat.size|e }}')">✏️ Editar</button>
+          <button class="btn-add-small" onclick='openCatEditModal({{ cat.id }},{{ cat.name|tojson }},{{ cat.size|tojson }})'>✏️ Editar</button>
           <form method="POST" action="{{ url_for('chef_delete_category', cid=cat.id) }}"
-                style="display:inline" onsubmit="return confirm('Remover categoria \"{{ cat.name|e }}\"? (nao pode ter itens)')">
+                style="display:inline" onsubmit='return confirm({{ ("Remover categoria " ~ cat.name ~ "? (nao pode ter itens)")|tojson }})'>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn-add-small" style="border-color:var(--red);color:var(--red);">🗑️ Remover</button>
           </form>
         </div>
@@ -221,6 +241,7 @@
       <button class="modal-close" onclick="closeModal('addModalOverlay')">×</button>
     </div>
     <form method="POST" action="{{ url_for('chef_add_item') }}" enctype="multipart/form-data" id="addForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Categoria</label>
         <select name="category" id="addCat" class="form-input">
@@ -270,6 +291,7 @@
       <button class="modal-close" onclick="closeModal('editModalOverlay')">×</button>
     </div>
     <form method="POST" id="editForm" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Categoria</label>
         <select name="category" id="editCat" class="form-input">
@@ -325,6 +347,7 @@
       <button class="modal-close" onclick="closeModal('catAddModal')">×</button>
     </div>
     <form method="POST" action="{{ url_for('chef_add_category') }}" id="catAddForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Nome da Categoria *</label>
         <input type="text" name="name" class="form-input" placeholder="Ex: Sobremesas" style="padding-left:16px;" required>
@@ -354,6 +377,7 @@
       <button class="modal-close" onclick="closeModal('catEditModal')">×</button>
     </div>
     <form method="POST" id="catEditForm">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Nome da Categoria *</label>
         <input type="text" name="name" id="catEditName" class="form-input" style="padding-left:16px;" required>
@@ -387,6 +411,7 @@
       Digite apenas números com DDI (ex: 5581999999999)
     </p>
     <form method="POST" action="{{ url_for('chef_update_whatsapp') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="form-group">
         <label class="form-label">Novo número</label>
         <input type="text" name="whatsapp" class="form-input" placeholder="5581999999999" value="{{ chef_whatsapp }}">

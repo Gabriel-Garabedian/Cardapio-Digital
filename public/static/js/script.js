@@ -12,7 +12,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initParticles();
   initFlashMessages();
   initPasswordStrength();
-  initPasswordToggle();
   initCategoryNav();
   initFormSubmitLoading();
   initRipple();
@@ -333,7 +332,8 @@ window.showToast = function(msg, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `flash flash-${type} js-toast`;
   toast.style.cssText = 'position:fixed;bottom:28px;right:24px;z-index:9999;min-width:240px;';
-  toast.innerHTML = `<span>${msg}</span><button class="flash-close" onclick="this.parentElement.remove()">×</button>`;
+  toast.innerHTML = '<span></span><button class="flash-close" onclick="this.parentElement.remove()">×</button>';
+  toast.querySelector('span').textContent = msg;
   document.body.appendChild(toast);
   setTimeout(() => dismissFlash(toast), 3500);
 };

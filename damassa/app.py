@@ -398,7 +398,7 @@ def painel():
         user   = db.execute("SELECT * FROM users WHERE id=?",(session['user_id'],)).fetchone()
     items  = {c['slug']:[r for r in iraw if r['cat_slug']==c['slug']] for c in cats}
     sauces = {c['slug']:[r for r in sraw if r['category_id']==c['id']] for c in cats}
-    return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user)
+    return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user, chef_whatsapp=get_chef_whatsapp())
 @app.route('/menu')
 def menu():
     with get_db() as db:
@@ -408,7 +408,7 @@ def menu():
         user   = db.execute("SELECT * FROM users WHERE id=?",(session.get('user_id'),)).fetchone() if session.get('user_id') else None
     items  = {c['slug']:[r for r in iraw if r['cat_slug']==c['slug']] for c in cats}
     sauces = {c['slug']:[r for r in sraw if r['category_id']==c['id']] for c in cats}
-    return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user)
+    return render_template('menu.html', categories=cats, items=items, sauces=sauces, user=user, chef_whatsapp=get_chef_whatsapp())
 
 @app.route('/order/place', methods=['POST'])
 @login_required

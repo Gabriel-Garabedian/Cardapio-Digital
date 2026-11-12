@@ -90,6 +90,7 @@ class AppTests(unittest.TestCase):
         with web.get_db() as db:
             self.assertEqual(db.execute("SELECT value FROM settings WHERE key='chef_whatsapp'").fetchone()['value'], '5511999999999')
         self.assertEqual(web.get_chef_whatsapp(), '5511999999999')
+        self.assertIn('https://wa.me/5511999999999', self.client.get('/menu').text)
 
     def test_upload_is_persistent_and_validated(self):
         from PIL import Image

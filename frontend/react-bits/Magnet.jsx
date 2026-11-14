@@ -113,7 +113,7 @@ const Magnet = ({
     const inner = innerRef.current;
     if (!wrapper || !inner) return undefined;
 
-    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    const reduce = false; // A versão reduzida é controlada pelo pai via disabled.
     const current = { x: 0, y: 0, tiltX: 0, tiltY: 0, scale: 1 };
     const velocity = { x: 0, y: 0, tiltX: 0, tiltY: 0, scale: 0 };
     let active = false;

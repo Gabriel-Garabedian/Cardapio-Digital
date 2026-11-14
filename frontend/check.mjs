@@ -18,7 +18,7 @@ assert.equal(await page.locator('.hero-action').count(),1);
 assert.equal(await page.locator('.hero-title').evaluate(el=>getComputedStyle(el).transform),'none');
 assert.equal(await page.locator('.hero-title').evaluate(el=>getComputedStyle(el).willChange),'auto');
 const oldMotion=eval('('+fs.readFileSync('tests/browser-motion.js','utf8')+')');await oldMotion(page);
-await page.emulateMedia({reducedMotion:'reduce'});await page.locator('.ribbon-static').waitFor();
+await page.emulateMedia({reducedMotion:'reduce'});await page.locator('#menuRibbon .scroller').waitFor();
 await page.emulateMedia({reducedMotion:'no-preference'});await page.locator('#menuRibbon .scroller').waitFor();
 await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'output/playwright/reactbits-desktop.png',fullPage:true});
 await page.setViewportSize({width:390,height:844});await page.screenshot({path:'output/playwright/reactbits-mobile.png',fullPage:true});

@@ -4,7 +4,7 @@ Destino: projeto existente `damassa-cardapio`, domínio `damassa-cardapio.vercel
 
 ## Conteúdo
 
-- React Bits e GSAP no cardápio, com início automático, sem controle manual, e preferência de movimento reduzido. Título principal estável após entrada suave.
+- React Bits e GSAP no cardápio, com início automático completo, sem controle de ativação; alternativa acessível no rodapé em ?motion=reduce. Título principal estável após entrada suave.
 - Botões Adicionar foto/Trocar foto no painel do chef, seleção de arquivo acessível, prévia e zoom lento nas fotos públicas.
 - Fotos e dados continuam no armazenamento existente. Nenhuma migração ou alteração de variáveis de ambiente necessária.
 - Nenhuma foto real foi cadastrada nesta entrega; o chef precisa enviar as imagens dos pratos.

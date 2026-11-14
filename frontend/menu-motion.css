@@ -4,3 +4,6 @@
 .hero-ornament{opacity:.5;right:-25px;top:0;width:350px;height:350px}.hero-floating span svg{display:block;width:40px;height:40px}.hero-floating{opacity:.45}@media(max-width:767px){.hero-ornament{width:240px;height:240px;right:-55px;top:5px;opacity:.3}.hero-floating span svg{width:30px;height:30px}}
 
 .menu-page .hero-content{animation:menu-title-enter .8s ease-out both}@keyframes menu-title-enter{from{opacity:0}to{opacity:1}}@media(prefers-reduced-motion:reduce){.menu-page .hero-content{animation:none}}
+
+.footer-motion-link{display:inline-block;margin-top:18px;color:var(--gold-light);font-size:12px;text-decoration:underline;text-underline-offset:4px}
+@media(prefers-reduced-motion:reduce){.menu-full-motion .hero-action svg{animation:menu-arrow 1.8s ease-in-out infinite!important}.menu-full-motion .hero-chef:before{animation:chef-glow 3s ease-in-out infinite!important}}

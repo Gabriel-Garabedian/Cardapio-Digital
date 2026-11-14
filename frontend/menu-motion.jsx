@@ -34,7 +34,7 @@ ornament.innerHTML='<svg viewBox="0 0 240 240" fill="none" stroke="currentColor"
 document.querySelector('.menu-hero').append(ornament);
 function LiveHeadline(){
   const reduced=useReducedMotion();
-  return <><span className="live-label">Seu próximo prato</span>{reduced ? <strong>Feito à mão.</strong> : <RotatingText texts={['Feito à mão.','Cheio de sabor.','Do seu jeito.']} rotationInterval={2100} staggerDuration={.035} effect="flip" mainClassName="live-words"/>}</>;
+  return <><span className="live-label">Seu próximo prato</span>{<RotatingText texts={['Feito à mão.','Cheio de sabor.','Do seu jeito.']} rotationInterval={2100} staggerDuration={reduced ? 0 : .035} effect={reduced ? 'slide' : 'flip'} initial={reduced ? {opacity:0} : undefined} animate={reduced ? {opacity:1} : undefined} exit={reduced ? {opacity:0} : undefined} transition={reduced ? {duration:.65,ease:'easeInOut'} : undefined} mainClassName="live-words"/>}</>;
 }
 function Seal(){
   const reduced=useReducedMotion();
@@ -67,4 +67,11 @@ media.add('(prefers-reduced-motion: no-preference)',()=>{
   });
   document.querySelectorAll('.cat-section').forEach(section=>categoryObserver.observe(section,{attributes:true,attributeFilter:['class']}));
   return()=>{cleanup.forEach(fn=>fn());categoryObserver.disconnect();gsap.killTweensOf('.menu-card, .card-photo img');gsap.set('.menu-card, .card-photo img',{clearProps:'transform'})};
+});
+
+// Movimento reduzido troca deslocamentos por transições suaves, sem desligar tudo.
+media.add('(prefers-reduced-motion: reduce)',()=>{
+  gsap.to('.hero-ornament',{opacity:.75,duration:2.8,repeat:-1,yoyo:true,ease:'sine.inOut'});
+  gsap.to('.food-steam',{opacity:.2,duration:2.5,repeat:-1,yoyo:true,ease:'sine.inOut'});
+  gsap.to('.ribbon-static, .seal-static',{opacity:.7,duration:2.8,repeat:-1,yoyo:true,ease:'sine.inOut'});
 });

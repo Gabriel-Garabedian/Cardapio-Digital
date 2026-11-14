@@ -4,7 +4,7 @@ Destino: projeto existente `damassa-cardapio`, domínio `damassa-cardapio.vercel
 
 ## Conteúdo
 
-- React Bits e GSAP no cardápio, com pausa manual e preferência de movimento reduzido. Título principal estável após entrada suave.
+- React Bits e GSAP no cardápio, com início automático, sem controle manual, e preferência de movimento reduzido. Título principal estável após entrada suave.
 - Botões Adicionar foto/Trocar foto no painel do chef, seleção de arquivo acessível, prévia e zoom lento nas fotos públicas.
 - Fotos e dados continuam no armazenamento existente. Nenhuma migração ou alteração de variáveis de ambiente necessária.
 - Nenhuma foto real foi cadastrada nesta entrega; o chef precisa enviar as imagens dos pratos.
@@ -22,7 +22,7 @@ Os artefatos `public/static/js/menu-motion.js`, `menu-motion.css` e `react-bits-
 
 ## Verificação e publicação
 
-17 testes Python passaram, incluindo armazenamento da foto, troca da imagem e acesso anônimo. Chrome local verificou animações, pausa, 360–1920 px, cadastro, carrinho, pedido e cancelamento; WhatsApp interceptado e banco sintético. O envio de foto pelo painel e exibição anônima também foram testados. Desempenho em celular físico não foi medido.
+17 testes Python passaram, incluindo armazenamento da foto, troca da imagem e acesso anônimo. Chrome local verificou animações automáticas, 360–1920 px, cadastro, carrinho, pedido e cancelamento; WhatsApp interceptado e banco sintético. O envio de foto pelo painel e exibição anônima também foram testados. Desempenho em celular físico não foi medido.
 
 Antes da integração, conferir que `origin/master` não avançou; se avançar, integrar e verificar o diff resultante. Publicar o commit revisado pela integração Git existente. Não criar novo projeto nem substituir configurações de banco.
 

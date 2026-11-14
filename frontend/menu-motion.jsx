@@ -8,11 +8,9 @@ import CircularText from './react-bits/CircularText.jsx';
 import './menu-motion.css';
 
 const preference=matchMedia('(prefers-reduced-motion: reduce)');
-let paused=preference.matches;
-const motionEvent='damassa-motion';
 function useReducedMotion(){
-  const [reduced,setReduced]=useState(paused);
-  useEffect(()=>{const update=()=>setReduced(paused);window.addEventListener(motionEvent,update);return()=>window.removeEventListener(motionEvent,update)},[]);
+  const [reduced,setReduced]=useState(preference.matches);
+  useEffect(()=>{const update=e=>setReduced(e.matches);preference.addEventListener('change',update);return()=>preference.removeEventListener('change',update)},[]);
   return reduced;
 }
 function Ribbon(){
@@ -45,17 +43,9 @@ function Seal(){
 const headline=document.createElement('div');headline.className='live-headline';document.querySelector('.hero-content').append(headline);createRoot(headline).render(<LiveHeadline/>);
 const seal=document.createElement('div');seal.className='hero-seal';document.querySelector('.hero-detail').append(seal);createRoot(seal).render(<Seal/>);
 const shapes=document.createElement('div');shapes.className='hero-floating';shapes.setAttribute('aria-hidden','true');shapes.innerHTML='<span><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 37C4 14 22 5 40 7c2 20-7 37-30 30ZM10 37 33 14m-14 14 0-12m7 5h11"/></svg></span><span><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="m10 6 30 4-2 30-30-4Z" stroke-dasharray="3 2"/><circle cx="24" cy="23" r="9"/></svg></span><span><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 37C4 14 22 5 40 7c2 20-7 37-30 30ZM10 37 33 14"/></svg></span>' ;document.querySelector('.menu-hero').append(shapes);
-const control=document.createElement('button');control.className='motion-control';control.type='button';document.querySelector('#menuRibbon').before(control);
-function updateMotion(){control.textContent=paused?'▶ Ativar animações':'Ⅱ Pausar animações';control.setAttribute('aria-pressed',String(paused));document.body.classList.toggle('menu-motion-paused',paused);window.dispatchEvent(new Event(motionEvent));configureMotion()}
-control.addEventListener('click',()=>{paused=!paused;updateMotion()});
-preference.addEventListener('change',e=>{paused=e.matches;updateMotion()});
-
-// Contextos são revertidos quando a preferência muda; não acumulam loops/listeners.
-let animationContext;
-function configureMotion(){
-animationContext?.revert();
-if(paused)return;
-animationContext=gsap.context(()=>{
+// Movimento automático; a preferência de acessibilidade do sistema é preservada.
+const media=gsap.matchMedia();
+media.add('(prefers-reduced-motion: no-preference)',()=>{
   const cleanup=[];
   gsap.to('.pasta-swirl',{rotation:360,duration:32,repeat:-1,ease:'none',svgOrigin:'120 125'});
   gsap.to('.food-steam',{y:-10,opacity:.2,duration:2.5,repeat:-1,yoyo:true,ease:'sine.inOut'});
@@ -78,5 +68,3 @@ animationContext=gsap.context(()=>{
   document.querySelectorAll('.cat-section').forEach(section=>categoryObserver.observe(section,{attributes:true,attributeFilter:['class']}));
   return()=>{cleanup.forEach(fn=>fn());categoryObserver.disconnect();gsap.killTweensOf('.menu-card, .card-photo img');gsap.set('.menu-card, .card-photo img',{clearProps:'transform'})};
 });
-}
-updateMotion();

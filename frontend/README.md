@@ -24,4 +24,4 @@ node frontend/check-flow.mjs
 
 O segundo teste cria cadastro e pedido sintéticos e testa cancelamento. Não executar contra produção. O WhatsApp é interceptado.
 
-Componentes adicionais: RotatingText e CircularText. As cópias de ScrollVelocity/RotatingText/CircularText delegam movimento reduzido ao pai para permitir ativação manual explícita mesmo com a preferência do sistema; a pausa desmonta esses componentes. Controle visível sempre disponível.
+Componentes adicionais: RotatingText e CircularText. As cópias de ScrollVelocity/RotatingText/CircularText delegam movimento reduzido ao pai. Animações são automáticas e não há botão para ativar/pausar; a preferência de acessibilidade do sistema é preservada.

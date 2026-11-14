@@ -83,6 +83,7 @@
             <div class="chef-item-desc">{{ item.description[:70] }}{% if item.description|length > 70 %}…{% endif %}</div>
           </div>
           <div class="chef-item-actions">
+            <button type="button" class="btn-item-photo" onclick="openPhotoModal(this)">{{ 'Trocar foto' if item.image else 'Adicionar foto' }}</button>
             <button class="btn-icon-edit" title="Editar"
               onclick='openEditModal({{ item.id }},{{ cat.slug|tojson }},{{ item.name|tojson }},{{ item.description|tojson }},{{ item.price }},{{ item.active }},{{ (url_for("uploaded_file", filename=item.image) if item.image else "")|tojson }})'>
               Editar
@@ -259,12 +260,12 @@
       </div>
       <div class="form-group">
         <label class="form-label">Foto do Prato</label>
-        <div class="file-upload-area" id="addFileArea" onclick="document.getElementById('addFile').click()">
-          <input type="file" id="addFile" name="image" accept="image/*" style="display:none" onchange="previewImage(this,'addPreview','addFileArea')">
-          <img id="addPreview" class="file-preview" style="display:none">
+        <div class="file-upload-area" id="addFileArea">
+          <input type="file" id="addFile" name="image" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Selecionar foto do prato" onchange="previewImage(this,'addPreview','addFileArea')">
+          <img id="addPreview" alt="Prévia da foto do prato" class="file-preview" style="display:none">
           <div class="file-upload-placeholder" id="addPlaceholder">
-            <p>Clique para enviar uma foto</p>
-            <small>PNG, JPG, WEBP — máx. 8MB</small>
+            <p>Selecione uma foto para mostrar no cardápio</p>
+            <small>PNG, JPG, WEBP — máx. 3 MB</small>
           </div>
         </div>
       </div>
@@ -315,11 +316,11 @@
       </div>
       <div class="form-group">
         <label class="form-label">Foto do Prato <small>(deixe vazio para manter atual)</small></label>
-        <div class="file-upload-area" id="editFileArea" onclick="document.getElementById('editFile').click()">
-          <input type="file" id="editFile" name="image" accept="image/*" style="display:none" onchange="previewImage(this,'editPreview','editFileArea')">
-          <img id="editPreview" class="file-preview" style="display:none">
+        <div class="file-upload-area" id="editFileArea">
+          <input type="file" id="editFile" name="image" accept="image/jpeg,image/png,image/webp,image/gif" aria-label="Selecionar foto do prato" onchange="previewImage(this,'editPreview','editFileArea')">
+          <img id="editPreview" alt="Prévia da foto do prato" class="file-preview" style="display:none">
           <div class="file-upload-placeholder" id="editPlaceholder">
-            <p>Clique para trocar a foto</p>
+            <p>Selecione uma foto para mostrar no cardápio</p>
           </div>
         </div>
       </div>
@@ -434,6 +435,7 @@ function openAddModal(slug) {
 }
 
 function openEditModal(id, slug, name, desc, price, active, imgUrl) {
+  document.getElementById('editFile').value = '';
   document.getElementById('editForm').action = `/chef/item/edit/${id}`;
   document.getElementById('editCat').value    = slug;
   document.getElementById('editName').value   = name;
@@ -460,9 +462,21 @@ function closeModal(id) {
   document.body.style.overflow = '';
 }
 
+function openPhotoModal(button) {
+  button.parentElement.querySelector('.btn-icon-edit').click();
+  const input = document.getElementById('editFile');
+  input.scrollIntoView({block:'center'});
+  input.focus({preventScroll:true});
+}
+
 function previewImage(input, previewId, areaId) {
   const file = input.files[0];
   if (!file) return;
+  if (file.size > 3 * 1024 * 1024 || !['image/jpeg','image/png','image/webp','image/gif'].includes(file.type)) {
+    input.value = '';
+    showToast('Selecione uma imagem JPG, PNG, WEBP ou GIF de até 3 MB.', 'danger');
+    return;
+  }
   const reader = new FileReader();
   reader.onload = e => {
     const img = document.getElementById(previewId);

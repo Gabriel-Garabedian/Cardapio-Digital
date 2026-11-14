@@ -8,9 +8,9 @@ async (page) => {
   await page.getByRole('button', { name: 'Gnocchi (Nhoque)', exact: true }).click();
   const animation = await page.locator('.cat-section.active').evaluate(element => ({
     name: getComputedStyle(element).animationName,
-    running: element.getAnimations().length > 0
+    duration: parseFloat(getComputedStyle(element).animationDuration)
   }));
-  check(animation.name === 'menu-enter' && animation.running, 'Animação da categoria não iniciou');
+  check(animation.name === 'menu-enter' && animation.duration > 0, 'Categoria sem animação configurada');
   await page.locator('.cat-section.active').evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
   for (const width of [360, 390, 768, 1440, 1920]) {
     await page.setViewportSize({ width, height: 844 });

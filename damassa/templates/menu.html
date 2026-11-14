@@ -1,6 +1,9 @@
 {% extends 'base.html' %}
 {% block title %}Cardápio{% endblock %}
 {% block body_class %}menu-page{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='js/menu-motion.css') }}?v=20261114b">
+{% endblock %}
 
 {% block content %}
 <!-- Hero -->
@@ -17,6 +20,9 @@
   </div>
 </section>
 
+<div class="menu-ribbon" id="menuRibbon" aria-label="Massas artesanais, escolha seu molho, feito para saborear">
+  <span>Massas artesanais · Escolha seu molho · Feito para saborear</span>
+</div>
 <div class="menu-layout" id="cardapio">
 <!-- Category Nav -->
 <nav class="category-nav" id="categoryNav" aria-label="Categorias do cardápio">
@@ -218,6 +224,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script defer src="{{ url_for('static', filename='js/menu-motion.js') }}?v=20261114b"></script>
 <script>
 // ═══════════ CART STATE ═══════════
 let cart = [];

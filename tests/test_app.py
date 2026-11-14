@@ -194,10 +194,13 @@ class AppTests(unittest.TestCase):
         photo.seek(0)
         self.client.post('/chef/item/add', data={'category': 'lasanha', 'name': "Chef's <prato>", 'price': '12.50', 'image': (photo, 'foto.png')})
         with web.get_db() as db:
-            row = db.execute('SELECT image FROM items ORDER BY id DESC').fetchone()
+            row = db.execute('SELECT id,image FROM items ORDER BY id DESC').fetchone()
         response = self.client.get('/uploads/' + row['image'])
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, 'image/png')
+        anonymous = web.app.test_client()
+        self.assertIn('/uploads/' + row['image'], anonymous.get('/cardapio').text)
+        self.assertEqual(anonymous.get('/uploads/' + row['image']).status_code, 200)
         self.assertEqual(self.client.get('/chef').status_code, 200)
         self.client.post('/chef/item/add', data={'category': 'lasanha', 'name': 'Invalido', 'price': '10', 'image': (io.BytesIO(b'<script>bad</script>'), 'fake.png')})
         with web.get_db() as db:
@@ -205,6 +208,17 @@ class AppTests(unittest.TestCase):
         self.client.post('/chef/item/add', data={'category': 'missing', 'name': 'Categoria invalida', 'price': '10', 'image': (io.BytesIO(response.data), 'foto.png')})
         with web.get_db() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) c FROM uploads').fetchone()['c'], 1)
+        replacement = io.BytesIO()
+        Image.new('RGB', (4, 4), 'green').save(replacement, format='PNG')
+        replacement.seek(0)
+        self.client.post('/chef/item/edit/' + str(row['id']), data={
+            'category': 'lasanha', 'name': 'Prato com foto', 'price': '12.50', 'active': '1',
+            'image': (replacement, 'nova.png')})
+        with web.get_db() as db:
+            updated = db.execute('SELECT image FROM items WHERE id=?', (row['id'],)).fetchone()['image']
+        self.assertNotEqual(updated, row['image'])
+        self.assertIn('/uploads/' + updated, anonymous.get('/cardapio').text)
+        self.assertEqual(anonymous.get('/uploads/' + updated).status_code, 200)
 
     def test_category_with_sauces_can_be_removed_when_empty(self):
         self.chef()

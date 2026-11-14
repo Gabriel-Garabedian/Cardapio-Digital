@@ -775,3 +775,11 @@ select.form-input { padding-left: 16px; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
 }
+
+/* Foto do prato: seleção nativa acessível e prévia. */
+.btn-item-photo{border:1px solid var(--gold);background:var(--gold-pale);color:var(--brown);border-radius:6px;padding:10px 12px;min-height:44px;font:600 12px 'DM Sans',sans-serif;cursor:pointer}
+.file-upload-area{flex-direction:column;gap:14px;cursor:default}
+.file-upload-area input[type=file]{width:100%;font:14px 'DM Sans',sans-serif;color:var(--text)}
+.file-upload-area input::file-selector-button{border:0;border-radius:6px;padding:12px;background:var(--gold);color:var(--dark);cursor:pointer;margin-right:10px}
+.file-upload-area input:focus-visible,.btn-item-photo:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.card-photo{height:220px}.card-photo img{display:block}
